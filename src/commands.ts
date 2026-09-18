@@ -10,6 +10,7 @@ import { GeminiProvider } from './providers/gemini-provider';
 import { ModelPermissionManager, PermissionMode } from './security/model-permissions';
 import { AgentRole } from './agents/types';
 import { CliAgentProvider } from './providers/cli-agent-provider';
+import { BillingMode, BillingPolicy } from './security/billing-policy';
 
 export function registerCommands(
     context: vscode.ExtensionContext,
@@ -20,6 +21,7 @@ export function registerCommands(
     statusBarManager: StatusBarManager,
     googleOAuth: GoogleOAuthManager,
     modelPermissions: ModelPermissionManager,
+    billingPolicy: BillingPolicy,
 ): vscode.Disposable[] {
     const recommendedExtensions = [
         { id: 'GitHub.copilot-chat', label: 'GitHub Copilot', description: 'Directly supplies account-backed VS Code language models to AI Orchestra' },
@@ -143,6 +145,18 @@ export function registerCommands(
             vscode.window.showInformationMessage(installed
                 ? `Installed ${installed} recommended extension(s). Reload VS Code if prompted.`
                 : 'All selected extensions are already installed.');
+        }),
+        vscode.commands.registerCommand('ai-orchestra.manageBillingMode', async () => {
+            const selected = await vscode.window.showQuickPick([
+                { label: 'Subscription / Free only (Recommended)', description: 'Block providers that can consume API credits', value: 'subscriptionOnly' as BillingMode },
+                { label: 'Credit with confirmation', description: 'Ask for explicit approval before every paid API request', value: 'creditWithConfirmation' as BillingMode },
+            ], { placeHolder: `Billing mode (current: ${billingPolicy.getMode()})` });
+            if (!selected) return;
+            await vscode.workspace.getConfiguration('ai-orchestra.billing').update('mode', selected.value, vscode.ConfigurationTarget.Global);
+            sidebarProvider.updateBillingMode(selected.value);
+            vscode.window.showInformationMessage(selected.value === 'subscriptionOnly'
+                ? 'AI Orchestra will use only subscription-backed or free/local providers.'
+                : 'Credit providers enabled. Every individual request will require confirmation.');
         }),
         vscode.commands.registerCommand('ai-orchestra.showUsage', () => vscode.commands.executeCommand('ai-orchestra.usage.focus')),
         vscode.commands.registerCommand('ai-orchestra.switchModel', async () => {

@@ -39,6 +39,10 @@
         "title": "AI Orchestra: Install Recommended Extensions"
       },
       {
+        "command": "ai-orchestra.manageBillingMode",
+        "title": "AI Orchestra: Manage Billing Mode"
+      },
+      {
         "command": "ai-orchestra.showUsage",
         "title": "AI Orchestra: Show Usage Dashboard"
       },
@@ -120,6 +124,19 @@
           "type": "number",
           "default": 0.8,
           "description": "Warning threshold for budget (0-1)"
+        },
+        "ai-orchestra.billing.mode": {
+          "type": "string",
+          "enum": [
+            "subscriptionOnly",
+            "creditWithConfirmation"
+          ],
+          "default": "subscriptionOnly",
+          "enumDescriptions": [
+            "Use only subscription-backed, free, or local providers",
+            "Allow credit providers but require confirmation before every request"
+          ],
+          "description": "Controls whether API-credit providers may be invoked"
         },
         "ai-orchestra.routing.preferredProvider": {
           "type": "string",

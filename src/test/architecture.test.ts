@@ -73,3 +73,14 @@ test('account-backed CLI providers invoke official CLIs without reading their to
   assert.match(cli, /permission-mode', 'plan/);
   assert.doesNotMatch(cli, /\.codex|\.claude|credentials\.json|oauth_creds/);
 });
+
+test('credit providers are blocked by default and require one-request confirmation', async () => {
+  const manifest = JSON.parse(await read('package.json'));
+  const billing = await read('src/security/billing-policy.ts');
+  const setting = manifest.contributes.configuration.properties['ai-orchestra.billing.mode'];
+  assert.equal(setting.default, 'subscriptionOnly');
+  assert.match(billing, /CREDIT_PROVIDERS.*openai.*anthropic.*gemini/s);
+  assert.match(billing, /modal: true/);
+  assert.match(billing, /Approval applies only to this single provider request/);
+  assert.doesNotMatch(billing, /approvedProviders|approvedSession|cache/);
+});

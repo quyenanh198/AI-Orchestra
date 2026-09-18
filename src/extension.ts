@@ -19,6 +19,7 @@ import { CredentialBroker } from './security/credential-broker';
 import { GoogleOAuthManager } from './security/google-oauth';
 import { GeminiProvider } from './providers/gemini-provider';
 import { ModelPermissionManager } from './security/model-permissions';
+import { BillingPolicy } from './security/billing-policy';
 
 export function activate(context: vscode.ExtensionContext): void {
     const outputChannel = vscode.window.createOutputChannel('AI Orchestra');
@@ -41,7 +42,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const taskAnalyzer = new TaskAnalyzer();
     const modelRouter = new ModelRouter(registry, budgetManager);
     const modelPermissions = new ModelPermissionManager(context.workspaceState, registry);
-    const credentialBroker = new CredentialBroker(registry, modelPermissions);
+    const billingPolicy = new BillingPolicy();
+    const credentialBroker = new CredentialBroker(registry, modelPermissions, billingPolicy);
     const orchestrator = new Orchestrator(budgetManager, taskAnalyzer, modelRouter, credentialBroker);
     context.subscriptions.push(orchestrator);
     const taskStore = new TaskStore(context.globalState);
@@ -60,6 +62,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // Sidebar
     const sidebarProvider = new SidebarProvider();
     sidebarProvider.updatePermissionMode(modelPermissions.getMode());
+    sidebarProvider.updateBillingMode(billingPolicy.getMode());
     const updateSidebarUsage = (): void => sidebarProvider.updateUsage(
         usageTracker.getSessionSummary(), usageTracker.getDailySummary(), budgetManager.getBudgetStatus()
     );
@@ -115,7 +118,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // 5. Register commands
     const cmds = registerCommands(
         context, registry, budgetManager,
-        chatPanelProvider, sidebarProvider, statusBarManager, googleOAuth, modelPermissions
+        chatPanelProvider, sidebarProvider, statusBarManager, googleOAuth, modelPermissions, billingPolicy
     );
     context.subscriptions.push(...cmds);
     context.subscriptions.push(supervisor.onEvent(event => {

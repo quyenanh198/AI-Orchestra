@@ -3,6 +3,7 @@ import { TaskRecord } from '../agents/types';
 import { BudgetStatus } from '../budget/budget-manager';
 import { UsageSummary } from '../budget/usage-tracker';
 import { PermissionMode } from '../security/model-permissions';
+import { BillingMode } from '../security/billing-policy';
 
 export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
@@ -14,6 +15,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     private daily?: UsageSummary;
     private budget?: BudgetStatus;
     private permissionMode: PermissionMode = 'open';
+    private billingMode: BillingMode = 'subscriptionOnly';
 
     constructor() {}
 
@@ -39,6 +41,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     }
 
     updatePermissionMode(mode: PermissionMode): void { this.permissionMode = mode; this.refresh(); }
+    updateBillingMode(mode: BillingMode): void { this.billingMode = mode; this.refresh(); }
 
     getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
         return element;
@@ -66,7 +69,12 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             recommendations.iconPath = new vscode.ThemeIcon('extensions');
             recommendations.command = { command: 'ai-orchestra.installRecommendations', title: 'Install Recommended Extensions' };
 
-            return Promise.resolve([providersRoot, permissions, recommendations, agentsRoot, usageRoot]);
+            const billing = new vscode.TreeItem('Billing Mode', vscode.TreeItemCollapsibleState.None);
+            billing.description = this.billingMode === 'subscriptionOnly' ? 'Subscription / Free only' : 'Credit: confirm every request';
+            billing.iconPath = new vscode.ThemeIcon(this.billingMode === 'subscriptionOnly' ? 'shield' : 'warning');
+            billing.command = { command: 'ai-orchestra.manageBillingMode', title: 'Manage Billing Mode' };
+
+            return Promise.resolve([providersRoot, billing, permissions, recommendations, agentsRoot, usageRoot]);
         }
 
         if (element.label === 'Providers') {

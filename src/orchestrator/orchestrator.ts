@@ -94,7 +94,7 @@ export class Orchestrator implements vscode.Disposable {
         if (!reservation.allowed || !reservation.id) throw new Error(`Budget reservation failed: ${reservation.reason || 'unknown reason'}`);
         reservationId = reservation.id;
         try {
-          const provider = this.credentialBroker.getProviderForInvocation(options?.agentId || 'supervisor', routingDecision.provider, routingDecision.model);
+          const provider = await this.credentialBroker.getProviderForInvocation(options?.agentId || 'supervisor', routingDecision.provider, routingDecision.model);
           response = await provider.chat(messages, {
             model: routingDecision.model,
             signal: options?.signal,
@@ -177,7 +177,7 @@ export class Orchestrator implements vscode.Disposable {
       if (!reservation.allowed || !reservation.id) throw new Error(`Budget reservation failed: ${reservation.reason || 'unknown reason'}`);
       reservationId = reservation.id;
 
-      const provider = this.credentialBroker.getProviderForInvocation(options?.agentId || 'supervisor', routingDecision.provider, routingDecision.model);
+      const provider = await this.credentialBroker.getProviderForInvocation(options?.agentId || 'supervisor', routingDecision.provider, routingDecision.model);
 
       let fullContent = '';
       const stream = provider.stream(messages, {
