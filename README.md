@@ -166,6 +166,8 @@ The same actions are available without the Command Palette: open the AI Orchestr
 
 The direct OpenAI and Anthropic API adapters still use API keys. Account subscriptions are exposed as separate `codex-cli` and `claude-code` providers because their official OAuth credentials are scoped to those clients. AI Orchestra deliberately does not extract or reuse their browser/CLI tokens.
 
+Choosing **Login with account** now installs/updates the selected official CLI before launching its login command. This avoids `codex/claude is not recognized` on a new machine. Provider execution also falls back to the official npm package through `npx` when a global binary cannot be resolved from `PATH`.
+
 ### Model permissions
 
 Click **Model Permissions** in the AI Orchestra sidebar, or run **AI Orchestra: Manage Model Permissions**:

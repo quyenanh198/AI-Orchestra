@@ -6,6 +6,7 @@ import { AIProvider, ChatChunk, ChatOptions, ChatResponse, Message, ModelInfo, P
 const execFileAsync = promisify(execFile);
 
 type CliKind = 'codex' | 'claude' | 'gemini';
+interface CliCommand { executable: string; prefix: string[]; }
 
 export class CliAgentProvider implements AIProvider {
   public readonly id: string;
@@ -25,16 +26,16 @@ export class CliAgentProvider implements AIProvider {
 
   public async isAvailable(): Promise<boolean> {
     try {
-      const executable = await this.resolveExecutable();
+      const command = await this.resolveCommand(false);
       if (this.kind === 'codex') {
-        const { stdout } = await execFileAsync(executable, ['login', 'status'], { timeout: 10_000, windowsHide: true });
+        const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'login', 'status'], { timeout: 10_000, windowsHide: true });
         return /logged in|chatgpt|api key/i.test(stdout);
       }
       if (this.kind === 'gemini') {
-        await execFileAsync(executable, ['--version'], { timeout: 10_000, windowsHide: true });
+        await execFileAsync(command.executable, [...command.prefix, '--version'], { timeout: 10_000, windowsHide: true });
         return true;
       }
-      const { stdout } = await execFileAsync(executable, ['auth', 'status', '--json'], { timeout: 10_000, windowsHide: true });
+      const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'auth', 'status', '--json'], { timeout: 10_000, windowsHide: true });
       return JSON.parse(stdout).loggedIn === true;
     } catch { return false; }
   }
@@ -42,6 +43,7 @@ export class CliAgentProvider implements AIProvider {
   public openLoginTerminal(): void {
     const terminal = vscode.window.createTerminal({ name: `${this.name} Login` });
     terminal.show();
+    terminal.sendText(`npm install -g ${this.packageName()}`, true);
     terminal.sendText(this.kind === 'codex' ? 'codex login' : this.kind === 'claude' ? 'claude auth login --claudeai' : 'gemini', true);
   }
 
@@ -54,7 +56,8 @@ export class CliAgentProvider implements AIProvider {
   public openLogoutTerminal(): void {
     const terminal = vscode.window.createTerminal({ name: `${this.name} Logout` });
     terminal.show();
-    terminal.sendText(this.kind === 'codex' ? 'codex logout' : this.kind === 'claude' ? 'claude auth logout' : 'gemini', true);
+    const runner = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    terminal.sendText(this.kind === 'codex' ? `${runner} --yes ${this.packageName()} logout` : this.kind === 'claude' ? `${runner} --yes ${this.packageName()} auth logout` : `${runner} --yes ${this.packageName()}`, true);
   }
 
   public getRateLimitStatus(): RateLimitStatus {
@@ -82,7 +85,8 @@ export class CliAgentProvider implements AIProvider {
     const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only'];
     if (options.model && options.model !== 'codex-default') args.push('--model', options.model);
     args.push(prompt);
-    const { stdout } = await execFileAsync(await this.resolveExecutable(), args, { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
+    const command = await this.resolveCommand(true);
+    const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
     let content = '';
     let inputTokens = 0; let outputTokens = 0;
     for (const line of stdout.split(/\r?\n/)) {
@@ -99,7 +103,8 @@ export class CliAgentProvider implements AIProvider {
   private async runClaude(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
     const args = ['-p', prompt, '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1'];
     if (options.model) args.push('--model', options.model);
-    const { stdout } = await execFileAsync(await this.resolveExecutable(), args, { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
+    const command = await this.resolveCommand(true);
+    const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
     const data = JSON.parse(stdout) as { result?: string; usage?: { input_tokens?: number; output_tokens?: number }; subtype?: string };
     if (!data.result) throw new Error(`Claude Code returned no result (${data.subtype || 'unknown'}).`);
     const inputTokens = data.usage?.input_tokens || 0; const outputTokens = data.usage?.output_tokens || 0;
@@ -109,18 +114,27 @@ export class CliAgentProvider implements AIProvider {
   private async runGemini(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
     const args = ['-p', prompt, '--output-format', 'json', '--sandbox'];
     if (options.model && options.model !== 'gemini-default') args.push('--model', options.model);
-    const { stdout } = await execFileAsync(await this.resolveExecutable(), args, { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
+    const command = await this.resolveCommand(true);
+    const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
     const start = stdout.indexOf('{');
     const data = JSON.parse(start >= 0 ? stdout.slice(start) : stdout) as { response?: string; error?: { message?: string } };
     if (!data.response) throw new Error(data.error?.message || 'Gemini CLI returned no response. Complete Google login in an interactive terminal first.');
     return { content: data.response, model: options.model || 'gemini-default', provider: this.id, finishReason: 'stop', usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCost: 0 } };
   }
 
-  private async resolveExecutable(): Promise<string> {
+  private async resolveCommand(allowNpx: boolean): Promise<CliCommand> {
     const locator = process.platform === 'win32' ? 'where.exe' : 'which';
-    const { stdout } = await execFileAsync(locator, [this.kind], { timeout: 5_000, windowsHide: true });
-    const executable = stdout.split(/\r?\n/).find(Boolean);
-    if (!executable) throw new Error(`${this.kind} CLI is not installed or not on PATH.`);
-    return executable.trim();
+    try {
+      const { stdout } = await execFileAsync(locator, [this.kind], { timeout: 5_000, windowsHide: true });
+      const executable = stdout.split(/\r?\n/).find(Boolean);
+      if (executable) return { executable: executable.trim(), prefix: [] };
+    } catch { /* Fall back to the official npm package on user-initiated execution. */ }
+    if (!allowNpx) throw new Error(`${this.kind} CLI is not installed or not on PATH.`);
+    const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    return { executable: npx, prefix: ['--yes', this.packageName()] };
+  }
+
+  private packageName(): string {
+    return this.kind === 'codex' ? '@openai/codex' : this.kind === 'claude' ? '@anthropic-ai/claude-code' : '@google/gemini-cli';
   }
 }

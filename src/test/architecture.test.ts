@@ -71,6 +71,8 @@ test('account-backed CLI providers invoke official CLIs without reading their to
   assert.match(cli, /claude.*auth.*status/s);
   assert.match(cli, /sandbox', 'read-only/);
   assert.match(cli, /permission-mode', 'plan/);
+  assert.match(cli, /npm install -g/);
+  assert.match(cli, /prefix: \['--yes', this\.packageName\(\)\]/);
   assert.doesNotMatch(cli, /\.codex|\.claude|credentials\.json|oauth_creds/);
 });
 
