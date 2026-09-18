@@ -3,6 +3,7 @@ import { OpenAIProvider } from './openai-provider';
 import { AnthropicProvider } from './anthropic-provider';
 import { GeminiProvider } from './gemini-provider';
 import { OllamaProvider } from './ollama-provider';
+import { VSCodeLanguageModelProvider } from './vscode-lm-provider';
 
 export class ProviderRegistry {
     private static instance: ProviderRegistry;
@@ -22,6 +23,7 @@ export class ProviderRegistry {
         this.registerProvider(new AnthropicProvider());
         this.registerProvider(new GeminiProvider());
         this.registerProvider(new OllamaProvider());
+        this.registerProvider(new VSCodeLanguageModelProvider());
     }
 
     public registerProvider(provider: AIProvider): void {

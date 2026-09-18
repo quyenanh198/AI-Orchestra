@@ -184,6 +184,8 @@ async function loadProviderKeys(
         const available = await ollama.isAvailable();
         sidebar.updateProviderStatus('ollama', available ? 'Available' : 'Not Running');
     }
+    const vscodeModels = registry.getProvider('vscode-lm');
+    sidebar.updateProviderStatus('vscode-lm', vscodeModels && await vscodeModels.isAvailable() ? 'Available' : 'Sign in required');
 }
 
 export function deactivate(): void {}

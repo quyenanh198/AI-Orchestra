@@ -57,6 +57,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
 
         if (element.label === 'Providers') {
             const providers = [
+                { id: 'vscode-lm', label: 'GitHub Copilot / VS Code' },
                 { id: 'openai', label: 'OpenAI' },
                 { id: 'anthropic', label: 'Anthropic' },
                 { id: 'gemini', label: 'Google Gemini' },

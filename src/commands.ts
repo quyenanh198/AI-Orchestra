@@ -4,6 +4,7 @@ import { ProviderRegistry } from './providers/provider-registry';
 import { ChatPanelProvider } from './ui/chat-panel';
 import { SidebarProvider } from './ui/sidebar-provider';
 import { StatusBarManager } from './ui/status-bar';
+import { VSCodeLanguageModelProvider } from './providers/vscode-lm-provider';
 
 export function registerCommands(
     context: vscode.ExtensionContext,
@@ -16,8 +17,15 @@ export function registerCommands(
     return [
         vscode.commands.registerCommand('ai-orchestra.openChat', () => vscode.commands.executeCommand('ai-orchestra.chatView.focus')),
         vscode.commands.registerCommand('ai-orchestra.configure', async () => {
-            const providerId = await vscode.window.showQuickPick(['openai', 'anthropic', 'gemini', 'ollama'], { placeHolder: 'Select a provider' });
+            const providerId = await vscode.window.showQuickPick(['vscode-lm', 'openai', 'anthropic', 'gemini', 'ollama'], { placeHolder: 'Select a provider' });
             if (!providerId) return;
+            if (providerId === 'vscode-lm') {
+                const provider = registry.getProvider(providerId) as VSCodeLanguageModelProvider;
+                const account = await provider.signIn();
+                sidebarProvider.updateProviderStatus(providerId, `Signed in: ${account}`);
+                vscode.window.showInformationMessage(`AI Orchestra connected to VS Code models as ${account}.`);
+                return;
+            }
             if (providerId === 'ollama') {
                 await vscode.commands.executeCommand('workbench.action.openSettings', 'ai-orchestra.ollama.endpoint');
                 return;
