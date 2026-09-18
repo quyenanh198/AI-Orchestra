@@ -75,7 +75,7 @@
         },
         "ai-orchestra.budget.maxCostPerDay": {
           "type": "number",
-          "default": 5.0,
+          "default": 5,
           "description": "Maximum cost per day in USD"
         },
         "ai-orchestra.budget.maxTokensPerTask": {
@@ -111,13 +111,26 @@
         },
         "ai-orchestra.routing.preferredProvider": {
           "type": "string",
-          "enum": ["auto", "vscode-lm", "openai", "anthropic", "gemini", "ollama"],
+          "enum": [
+            "auto",
+            "vscode-lm",
+            "openai",
+            "anthropic",
+            "gemini",
+            "ollama"
+          ],
           "default": "auto",
           "description": "Preferred AI provider"
         },
         "ai-orchestra.routing.fallbackOrder": {
           "type": "array",
-          "default": ["vscode-lm", "openai", "anthropic", "gemini", "ollama"],
+          "default": [
+            "vscode-lm",
+            "openai",
+            "anthropic",
+            "gemini",
+            "ollama"
+          ],
           "description": "Fallback order for AI providers"
         },
         "ai-orchestra.routing.autoDowngrade": {
@@ -159,20 +172,21 @@
     "package": "npx @vscode/vsce package"
   },
   "dependencies": {
-    "openai": "^4.73.0",
     "@anthropic-ai/sdk": "^0.39.0",
     "@google/generative-ai": "^0.21.0",
     "axios": "^1.7.0",
-    "gpt-tokenizer": "^2.8.0"
+    "google-auth-library": "^10.9.1",
+    "gpt-tokenizer": "^2.8.0",
+    "openai": "^4.73.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "@types/vscode": "^1.100.0",
     "@types/node": "^22.0.0",
-    "esbuild": "^0.24.0",
-    "eslint": "^9.0.0",
+    "@types/vscode": "^1.100.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
-    "tsx": "^4.0.0"
+    "esbuild": "^0.24.0",
+    "eslint": "^9.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0"
   }
 }

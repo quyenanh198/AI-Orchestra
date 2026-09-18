@@ -16,6 +16,8 @@ import { TaskStore } from './orchestrator/task-store';
 import { MultiAgentSupervisor } from './orchestrator/multi-agent-supervisor';
 import { ToolRuntime } from './tools/tool-runtime';
 import { CredentialBroker } from './security/credential-broker';
+import { GoogleOAuthManager } from './security/google-oauth';
+import { GeminiProvider } from './providers/gemini-provider';
 
 export function activate(context: vscode.ExtensionContext): void {
     const outputChannel = vscode.window.createOutputChannel('AI Orchestra');
@@ -25,6 +27,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // 1. Initialize providers
     const registry = ProviderRegistry.getInstance();
     registry.initialize();
+    const googleOAuth = new GoogleOAuthManager(context.secrets);
 
     // 2. Initialize budget system
     const costCalculator = new CostCalculator();
@@ -109,7 +112,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // 5. Register commands
     const cmds = registerCommands(
         context, registry, budgetManager,
-        chatPanelProvider, sidebarProvider, statusBarManager
+        chatPanelProvider, sidebarProvider, statusBarManager, googleOAuth
     );
     context.subscriptions.push(...cmds);
     context.subscriptions.push(supervisor.onEvent(event => {
@@ -153,7 +156,7 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     // 8. Load API keys
-    void loadProviderKeys(context.secrets, registry, sidebarProvider, outputChannel);
+    void loadProviderKeys(context.secrets, registry, sidebarProvider, outputChannel, googleOAuth);
 
     outputChannel.appendLine('AI Orchestra extension activated successfully.');
 }
@@ -162,7 +165,8 @@ async function loadProviderKeys(
     secrets: vscode.SecretStorage,
     registry: ProviderRegistry,
     sidebar: SidebarProvider,
-    output: vscode.OutputChannel
+    output: vscode.OutputChannel,
+    googleOAuth: GoogleOAuthManager,
 ): Promise<void> {
     for (const id of ['openai', 'anthropic', 'gemini']) {
         const key = await secrets.get(`ai-orchestra.${id}.apiKey`);
@@ -176,6 +180,10 @@ async function loadProviderKeys(
         } else {
             sidebar.updateProviderStatus(id, 'Not Configured');
         }
+    }
+    if (await googleOAuth.isConfigured()) {
+        (registry.getProvider('gemini') as GeminiProvider).configureOAuth(googleOAuth);
+        sidebar.updateProviderStatus('gemini', 'Signed in with Google');
     }
     const ollama = registry.getProvider('ollama');
     if (ollama) {

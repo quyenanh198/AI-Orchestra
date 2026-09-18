@@ -43,3 +43,14 @@ test('runtime provider failures trigger another routing decision', async () => {
   assert.match(orchestrator, /Runtime fallback/);
   assert.match(orchestrator, /All providers failed/);
 });
+
+test('account login keeps refresh credentials in SecretStorage', async () => {
+  const google = await read('src/security/google-oauth.ts');
+  const vscodeProvider = await read('src/providers/vscode-lm-provider.ts');
+  assert.match(google, /SecretStorage/);
+  assert.match(google, /refreshToken/);
+  assert.match(google, /expectedState/);
+  assert.doesNotMatch(google, /writeFile|globalState\.update/);
+  assert.match(vscodeProvider, /authentication\.getSession\('github'/);
+  assert.match(vscodeProvider, /lm\.selectChatModels/);
+});
