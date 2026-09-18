@@ -52,7 +52,8 @@ export function registerCommands(
             if (providerId === 'gemini' && action === 'Sign out Google OAuth') {
                 await googleOAuth.signOut();
                 (registry.getProvider('gemini') as GeminiProvider).configureOAuth(undefined);
-                sidebarProvider.updateProviderStatus('gemini', 'Not Configured');
+                const apiKey = await context.secrets.get('ai-orchestra.gemini.apiKey');
+                sidebarProvider.updateProviderStatus('gemini', apiKey ? 'Available (API key)' : 'Not Configured');
                 return;
             }
             const secretKey = `ai-orchestra.${providerId}.apiKey`;
@@ -64,6 +65,10 @@ export function registerCommands(
             }
             const apiKey = await vscode.window.showInputBox({ prompt: `Enter API key for ${providerId}`, password: true, ignoreFocusOut: true });
             if (!apiKey) return;
+            if (providerId === 'gemini') {
+                await googleOAuth.signOut();
+                (registry.getProvider('gemini') as GeminiProvider).configureOAuth(undefined);
+            }
             await context.secrets.store(secretKey, apiKey);
             registry.getProvider(providerId)?.configure({ apiKey });
             sidebarProvider.updateProviderStatus(providerId, 'Available');

@@ -23,6 +23,8 @@
 - Sidebar reports live task state, token usage, spend and remaining budget.
 - Unknown cloud models use conservative pricing; local Ollama remains zero-cost.
 - ESLint 9 configuration, architecture tests, build and VSIX packaging are operational.
+- Added GitHub/Copilot account login through VS Code's built-in authentication and Language Model APIs.
+- Added the official Gemini desktop OAuth pattern with loopback callback, state validation and refresh-token storage.
 
 ## Remaining roadmap
 
@@ -41,7 +43,7 @@
 
 ### P3 later
 
-- Add provider OAuth where supported; retain API-key mode for headless use.
+- Evaluate additional official account providers when they expose supported third-party inference grants; retain API-key mode for headless use.
 - Add task DAG editing, agent profiles, telemetry opt-in and exportable audit logs.
 - Reduce the bundled extension size and add CI release gates.
 

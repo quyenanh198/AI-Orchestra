@@ -2,8 +2,12 @@
   "name": "ai-orchestra",
   "displayName": "AI Orchestra",
   "description": "Multi-model AI orchestrator with smart budget management",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "ai-orchestra",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quyenanh198/AI-Orchestra.git"
+  },
   "engines": {
     "vscode": "^1.100.0"
   },
@@ -184,7 +188,7 @@
     "@types/vscode": "^1.100.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0"

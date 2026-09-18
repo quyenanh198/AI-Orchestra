@@ -138,18 +138,29 @@ npm run package
 
 ## Provider authentication and agent permissions
 
-AI Orchestra does not implement OAuth and never asks for an AI-provider account password.
+AI Orchestra supports account login only where the provider exposes an official flow. It never asks for an account password.
 
 | Provider | Authentication | Storage | Agent access |
 |---|---|---|---|
+| GitHub Copilot / VS Code models | VS Code GitHub account + model consent | Managed by VS Code; not copied to extension storage | Invocation through VS Code Language Model API |
 | OpenAI | API key | VS Code `SecretStorage` | Invocation capability; no raw key |
 | Anthropic | API key | VS Code `SecretStorage` | Invocation capability; no raw key |
-| Gemini | API key | VS Code `SecretStorage` | Invocation capability; no raw key |
+| Gemini | Google OAuth desktop flow or API key | Refresh token/client secret or API key in VS Code `SecretStorage` | Invocation capability; no raw credential |
 | Ollama | None by default | Endpoint in VS Code settings | Configured local endpoint |
 
-Raw API keys are loaded only by the extension host into provider adapters. Supervisor
-and worker agents never receive key values. Removing a key clears `SecretStorage` and
-the configured in-memory provider client.
+### Account login setup
+
+Run **AI Orchestra: Configure Providers**:
+
+1. Select `vscode-lm` to sign in through VS Code's built-in GitHub authentication. VS Code and the model provider show their own consent dialogs. A Copilot plan/model entitlement may be required.
+2. Select `gemini` → **Sign in with Google OAuth** for Google account login. Create a Google OAuth client of type **Desktop app**, enable the Generative Language API, configure its consent screen, and provide its client ID, client secret and billing/quota project ID. The browser returns to a random loopback port; this flow is intended for a local desktop extension host.
+3. Google OAuth can be revoked with **Sign out Google OAuth**. Selecting **Save API key** switches Gemini back to API-key mode.
+
+OpenAI and Anthropic inference still require API keys because their public API documentation does not provide a general end-user OAuth grant for arbitrary third-party extensions. AI Orchestra deliberately does not import Codex CLI, Claude Code or browser session tokens.
+
+Raw credentials are loaded only by the extension host into provider adapters. Supervisor
+and worker agents never receive their values. Removing a key/token clears `SecretStorage`
+and the configured in-memory provider client.
 
 The upstream provider decides the account-level scope of each API key. AI Orchestra
 uses the key only for model inference APIs, but it cannot reduce a broadly privileged
