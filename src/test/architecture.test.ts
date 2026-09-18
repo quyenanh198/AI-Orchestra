@@ -67,12 +67,21 @@ test('restricted mode enforces per-role model assignments at invocation time', a
 
 test('account-backed CLI providers invoke official CLIs without reading their tokens', async () => {
   const cli = await read('src/providers/cli-agent-provider.ts');
+  const registry = await read('src/providers/provider-registry.ts');
+  const manifest = await read('package.json');
   assert.match(cli, /codex.*login.*status/s);
   assert.match(cli, /claude.*auth.*status/s);
+  assert.match(cli, /antigravity.*agy/s);
+  assert.match(cli, /antigravity\.google\/cli\/install\.ps1/);
+  assert.match(cli, /npm.*prefix.*-g/s);
+  assert.match(cli, /LOCALAPPDATA/);
   assert.match(cli, /sandbox', 'read-only/);
   assert.match(cli, /permission-mode', 'plan/);
   assert.match(cli, /npm install -g/);
   assert.match(cli, /prefix: \['--yes', this\.packageName\(\)\]/);
+  assert.match(registry, /CliAgentProvider\('antigravity'\)/);
+  assert.match(manifest, /antigravity-cli/);
+  assert.doesNotMatch(manifest, /gemini-cli/);
   assert.doesNotMatch(cli, /\.codex|\.claude|credentials\.json|oauth_creds/);
 });
 
