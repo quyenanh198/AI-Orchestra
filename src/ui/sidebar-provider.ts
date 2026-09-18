@@ -83,9 +83,10 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
                 { id: 'codex-cli', label: 'OpenAI Codex / ChatGPT Account' },
                 { id: 'claude-code', label: 'Claude Code / Claude Account' },
                 { id: 'antigravity-cli', label: 'Google Antigravity / Google Account' },
+                { id: 'grok-cli', label: 'Grok Build / xAI Account' },
                 { id: 'ollama', label: 'Ollama (Local)' }
             ];
-            if (this.billingMode === 'creditWithConfirmation') providers.splice(4, 0,
+            if (this.billingMode === 'creditWithConfirmation') providers.splice(5, 0,
                 { id: 'openai', label: 'OpenAI API (Credit)' },
                 { id: 'anthropic', label: 'Anthropic API (Credit)' },
                 { id: 'gemini', label: 'Google Gemini API (Credit)' },

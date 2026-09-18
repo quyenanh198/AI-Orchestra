@@ -28,6 +28,7 @@ export class ProviderRegistry {
         this.registerProvider(new CliAgentProvider('codex'));
         this.registerProvider(new CliAgentProvider('claude'));
         this.registerProvider(new CliAgentProvider('antigravity'));
+        this.registerProvider(new CliAgentProvider('grok'));
     }
 
     public registerProvider(provider: AIProvider): void {

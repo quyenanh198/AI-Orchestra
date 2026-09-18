@@ -169,6 +169,6 @@ export class ModelRouter {
    */
   private getFallbackOrder(): string[] {
     const config = vscode.workspace.getConfiguration('ai-orchestra.routing');
-    return config.get('fallbackOrder', ['vscode-lm', 'codex-cli', 'claude-code', 'antigravity-cli', 'openai', 'anthropic', 'gemini', 'ollama']) as string[];
+    return config.get('fallbackOrder', ['vscode-lm', 'codex-cli', 'claude-code', 'antigravity-cli', 'grok-cli', 'openai', 'anthropic', 'gemini', 'ollama']) as string[];
   }
 }

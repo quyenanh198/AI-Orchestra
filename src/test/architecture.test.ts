@@ -72,6 +72,9 @@ test('account-backed CLI providers invoke official CLIs without reading their to
   assert.match(cli, /codex.*login.*status/s);
   assert.match(cli, /claude.*auth.*status/s);
   assert.match(cli, /antigravity.*agy/s);
+  assert.match(cli, /grok login/);
+  assert.match(cli, /@xai-official\/grok/);
+  assert.match(cli, /--output-format', 'json'.*permission-mode', 'plan'/s);
   assert.match(cli, /antigravity\.google\/cli\/install\.ps1/);
   assert.match(cli, /npm.*prefix.*-g/s);
   assert.match(cli, /LOCALAPPDATA/);
@@ -84,6 +87,7 @@ test('account-backed CLI providers invoke official CLIs without reading their to
   assert.match(cli, /npm install -g/);
   assert.match(cli, /prefix: \['--yes', this\.packageName\(\)\]/);
   assert.match(registry, /CliAgentProvider\('antigravity'\)/);
+  assert.match(registry, /CliAgentProvider\('grok'\)/);
   assert.match(manifest, /antigravity-cli/);
   assert.doesNotMatch(manifest, /gemini-cli/);
   assert.doesNotMatch(cli, /\.codex|\.claude|credentials\.json|oauth_creds/);

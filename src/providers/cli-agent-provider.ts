@@ -8,7 +8,7 @@ import { AIProvider, ChatChunk, ChatOptions, ChatResponse, Message, ModelInfo, P
 
 const execFileAsync = promisify(execFile);
 
-type CliKind = 'codex' | 'claude' | 'antigravity';
+type CliKind = 'codex' | 'claude' | 'antigravity' | 'grok';
 interface CliCommand { executable: string; prefix: string[]; }
 export interface CliStatus {
   installed: boolean;
@@ -25,18 +25,18 @@ export class CliAgentProvider implements AIProvider {
   public readonly models: ModelInfo[];
 
   constructor(private readonly kind: CliKind) {
-    this.id = kind === 'codex' ? 'codex-cli' : kind === 'claude' ? 'claude-code' : 'antigravity-cli';
-    this.name = kind === 'codex' ? 'OpenAI Codex (ChatGPT login)' : kind === 'claude' ? 'Claude Code (Claude login)' : 'Google Antigravity (Google login)';
+    this.id = kind === 'codex' ? 'codex-cli' : kind === 'claude' ? 'claude-code' : kind === 'antigravity' ? 'antigravity-cli' : 'grok-cli';
+    this.name = kind === 'codex' ? 'OpenAI Codex (ChatGPT login)' : kind === 'claude' ? 'Claude Code (Claude login)' : kind === 'antigravity' ? 'Google Antigravity (Google login)' : 'Grok Build (xAI account login)';
     this.models = kind === 'codex'
       ? [{ id: 'codex-default', name: 'Codex account default', provider: this.id, maxContextTokens: 200_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'premium' }]
       : kind === 'claude' ? [
           { id: 'sonnet', name: 'Claude Sonnet (account)', provider: this.id, maxContextTokens: 200_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'standard' },
           { id: 'opus', name: 'Claude Opus (account)', provider: this.id, maxContextTokens: 200_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'premium' },
-        ] : [
+        ] : kind === 'antigravity' ? [
           { id: 'gemini-3.8-flash-high', name: 'Gemini 3.8 Flash High', provider: this.id, maxContextTokens: 1_000_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'standard' },
           { id: 'gemini-3.1-pro-high', name: 'Gemini 3.1 Pro High', provider: this.id, maxContextTokens: 1_000_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'premium' },
           { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 via Antigravity', provider: this.id, maxContextTokens: 200_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'standard' },
-        ];
+        ] : [{ id: 'grok-build', name: 'Grok Build (account default)', provider: this.id, maxContextTokens: 500_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'premium' }];
   }
 
   public async isAvailable(): Promise<boolean> {
@@ -46,7 +46,7 @@ export class CliAgentProvider implements AIProvider {
   public async checkStatus(): Promise<CliStatus> {
     try {
       const command = await this.resolveCommand(false);
-      const versionResult = await execFileAsync(command.executable, [...command.prefix, '--version'], { timeout: 10_000, windowsHide: true });
+      const versionResult = await execFileAsync(command.executable, [...command.prefix, ...(this.kind === 'grok' ? ['version'] : ['--version'])], { timeout: 10_000, windowsHide: true });
       const version = `${versionResult.stdout}\n${versionResult.stderr}`.trim().split(/\r?\n/)[0];
       try {
         if (this.kind === 'codex') {
@@ -57,6 +57,10 @@ export class CliAgentProvider implements AIProvider {
         if (this.kind === 'antigravity') {
           const { stdout } = await execFileAsync(command.executable, ['-p', '/usage', '--output-format', 'json', '--print-timeout', '10s'], { timeout: 15_000, windowsHide: true });
           return { installed: true, authenticated: !/authentication required/i.test(stdout), version, accountType: 'Google', executable: command.executable };
+        }
+        if (this.kind === 'grok') {
+          await execFileAsync(command.executable, [...command.prefix, 'models'], { timeout: 15_000, windowsHide: true });
+          return { installed: true, authenticated: true, version, accountType: 'xAI account', executable: command.executable };
         }
         const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'auth', 'status', '--json'], { timeout: 10_000, windowsHide: true });
         const auth = JSON.parse(stdout) as { loggedIn?: boolean; authMethod?: string; subscriptionType?: string };
@@ -81,20 +85,20 @@ export class CliAgentProvider implements AIProvider {
     terminal.show();
     if (this.kind === 'antigravity') terminal.sendText(process.platform === 'win32' ? 'irm https://antigravity.google/cli/install.ps1 | iex' : 'curl -fsSL https://antigravity.google/cli/install.sh | bash', true);
     else terminal.sendText(`npm install -g ${this.packageName()}`, true);
-    terminal.sendText(this.kind === 'codex' ? 'codex login' : this.kind === 'claude' ? 'claude auth login --claudeai' : 'agy', true);
+    terminal.sendText(this.kind === 'codex' ? 'codex login' : this.kind === 'claude' ? 'claude auth login --claudeai' : this.kind === 'antigravity' ? 'agy' : 'grok login', true);
   }
 
   public openInstallTerminal(): void {
     const terminal = vscode.window.createTerminal({ name: `Install ${this.name}` });
     terminal.show();
-    terminal.sendText(this.kind === 'codex' ? 'npm install -g @openai/codex' : this.kind === 'claude' ? 'npm install -g @anthropic-ai/claude-code' : process.platform === 'win32' ? 'irm https://antigravity.google/cli/install.ps1 | iex' : 'curl -fsSL https://antigravity.google/cli/install.sh | bash', true);
+    terminal.sendText(this.kind === 'codex' ? 'npm install -g @openai/codex' : this.kind === 'claude' ? 'npm install -g @anthropic-ai/claude-code' : this.kind === 'grok' ? 'npm install -g @xai-official/grok' : process.platform === 'win32' ? 'irm https://antigravity.google/cli/install.ps1 | iex' : 'curl -fsSL https://antigravity.google/cli/install.sh | bash', true);
   }
 
   public openLogoutTerminal(): void {
     const terminal = vscode.window.createTerminal({ name: `${this.name} Logout` });
     terminal.show();
     const runner = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-    terminal.sendText(this.kind === 'codex' ? `${runner} --yes ${this.packageName()} logout` : this.kind === 'claude' ? `${runner} --yes ${this.packageName()} auth logout` : 'agy', true);
+    terminal.sendText(this.kind === 'codex' ? `${runner} --yes ${this.packageName()} logout` : this.kind === 'claude' ? `${runner} --yes ${this.packageName()} auth logout` : this.kind === 'antigravity' ? 'agy' : 'grok logout', true);
   }
 
   public getRateLimitStatus(): RateLimitStatus {
@@ -106,7 +110,8 @@ export class CliAgentProvider implements AIProvider {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
     return this.kind === 'codex' ? this.runCodex(prompt, cwd, options)
       : this.kind === 'claude' ? this.runClaude(prompt, cwd, options)
-      : this.runAntigravity(prompt, cwd, options);
+      : this.kind === 'antigravity' ? this.runAntigravity(prompt, cwd, options)
+      : this.runGrok(prompt, cwd, options);
   }
 
   public async *stream(messages: Message[], options: ChatOptions = {}): AsyncGenerator<ChatChunk> {
@@ -160,6 +165,18 @@ export class CliAgentProvider implements AIProvider {
     return { content: data.response, model: options.model || 'antigravity-default', provider: this.id, finishReason: 'stop', usage: { inputTokens, outputTokens, totalTokens: data.usage?.total_tokens || inputTokens + outputTokens, estimatedCost: 0 } };
   }
 
+  private async runGrok(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
+    const args = ['--no-auto-update', '-p', prompt, '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1'];
+    if (options.model && options.model !== 'grok-build') args.push('--model', options.model);
+    const command = await this.resolveCommand(true);
+    const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
+    const start = stdout.indexOf('{');
+    const data = JSON.parse(start >= 0 ? stdout.slice(start) : stdout) as { text?: string; usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number } };
+    if (!data.text) throw new Error('Grok Build returned no response. Run grok login first.');
+    const inputTokens = data.usage?.input_tokens || 0; const outputTokens = data.usage?.output_tokens || 0;
+    return { content: data.text, model: options.model || 'grok-build', provider: this.id, finishReason: 'stop', usage: { inputTokens, outputTokens, totalTokens: data.usage?.total_tokens || inputTokens + outputTokens, estimatedCost: 0 } };
+  }
+
   private async resolveCommand(allowNpx: boolean): Promise<CliCommand> {
     const locator = process.platform === 'win32' ? 'where.exe' : 'which';
     try {
@@ -180,7 +197,7 @@ export class CliAgentProvider implements AIProvider {
 
   private packageName(): string {
     if (this.kind === 'antigravity') throw new Error('Antigravity uses its native installer, not npm.');
-    return this.kind === 'codex' ? '@openai/codex' : '@anthropic-ai/claude-code';
+    return this.kind === 'codex' ? '@openai/codex' : this.kind === 'claude' ? '@anthropic-ai/claude-code' : '@xai-official/grok';
   }
 
   private async explicitInstallPath(): Promise<string | undefined> {

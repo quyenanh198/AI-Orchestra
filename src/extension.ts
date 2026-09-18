@@ -202,7 +202,7 @@ async function loadProviderKeys(
     }
     const vscodeModels = registry.getProvider('vscode-lm');
     sidebar.updateProviderStatus('vscode-lm', vscodeModels && await vscodeModels.isAvailable() ? 'Available' : 'Sign in required');
-    for (const id of ['codex-cli', 'claude-code', 'antigravity-cli']) {
+    for (const id of ['codex-cli', 'claude-code', 'antigravity-cli', 'grok-cli']) {
         const provider = registry.getProvider(id) as CliAgentProvider | undefined;
         if (state.get<number>(`ai-orchestra.authVerified.${id}`)) sidebar.updateProviderStatus(id, 'Previously authenticated · checking…');
         const status = provider ? await provider.checkStatus() : { installed: false, authenticated: false };

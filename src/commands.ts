@@ -55,15 +55,15 @@ export function registerCommands(
     return [
         vscode.commands.registerCommand('ai-orchestra.openChat', () => vscode.commands.executeCommand('ai-orchestra.chatView.focus')),
         vscode.commands.registerCommand('ai-orchestra.configure', async (requestedProvider?: string) => {
-            const visibleProviders = ['vscode-lm', 'codex-cli', 'claude-code', 'antigravity-cli', 'ollama'];
-            if (billingPolicy.getMode() === 'creditWithConfirmation') visibleProviders.splice(4, 0, 'openai', 'anthropic', 'gemini');
+            const visibleProviders = ['vscode-lm', 'codex-cli', 'claude-code', 'antigravity-cli', 'grok-cli', 'ollama'];
+            if (billingPolicy.getMode() === 'creditWithConfirmation') visibleProviders.splice(5, 0, 'openai', 'anthropic', 'gemini');
             const providerId = requestedProvider || await vscode.window.showQuickPick(visibleProviders, { placeHolder: 'Select a provider' });
             if (!providerId) return;
             if (billingPolicy.isCreditProvider(providerId) && billingPolicy.getMode() !== 'creditWithConfirmation') {
                 vscode.window.showWarningMessage('API-credit providers are hidden while Billing Mode is Subscription / Free only.');
                 return;
             }
-            if (['codex-cli', 'claude-code', 'antigravity-cli'].includes(providerId)) {
+            if (['codex-cli', 'claude-code', 'antigravity-cli', 'grok-cli'].includes(providerId)) {
                 const provider = registry.getProvider(providerId) as CliAgentProvider;
                 const cliActions = ['Check CLI status', 'Login with account', 'Install official CLI', 'Logout'];
                 const action = await vscode.window.showQuickPick(cliActions, { placeHolder: `${provider.name}: account authentication` });
