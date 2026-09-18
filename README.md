@@ -57,7 +57,7 @@ Run command: **AI Orchestra: Open Chat** or click the 🤖 icon in the activity 
 | `ai-orchestra.budget.maxCostPerDay` | `$5.00` | Max daily spend (USD) |
 | `ai-orchestra.budget.warningThreshold` | `0.8` | Warning at 80% budget |
 | `ai-orchestra.routing.preferredProvider` | `auto` | Preferred provider |
-| `ai-orchestra.routing.fallbackOrder` | `[vscode-lm, codex-cli, claude-code, antigravity-cli, openai, anthropic, gemini, ollama]` | Fallback priority; credit providers are skipped in subscription-only mode |
+| `ai-orchestra.routing.fallbackOrder` | `[vscode-lm, codex-cli, claude-code, antigravity-cli, grok-cli, openai, anthropic, gemini, ollama]` | Fallback priority; credit providers are skipped in subscription-only mode |
 | `ai-orchestra.routing.autoDowngrade` | `true` | Auto-switch to cheaper models |
 | `ai-orchestra.ollama.endpoint` | `http://localhost:11434` | Ollama server URL |
 
@@ -146,6 +146,7 @@ AI Orchestra supports account login only where the provider exposes an official 
 | OpenAI Codex | ChatGPT account through official Codex CLI | Managed by Codex CLI; never read by AI Orchestra | Read-only `codex exec` invocation |
 | Claude Code | Claude.ai account through official Claude Code CLI | Managed by Claude Code; never read by AI Orchestra | Plan-mode `claude -p` invocation |
 | Google Antigravity | Google account through official Antigravity CLI | Managed by Antigravity; never read by AI Orchestra | Sandboxed headless `agy` invocation |
+| Grok Build | xAI/Grok account through official Grok Build CLI | Managed by Grok CLI; never read by AI Orchestra | Plan-mode headless `grok -p` invocation |
 | OpenAI | API key | VS Code `SecretStorage` | Invocation capability; no raw key |
 | Anthropic | API key | VS Code `SecretStorage` | Invocation capability; no raw key |
 | Gemini | Google OAuth desktop flow or API key | Refresh token/client secret or API key in VS Code `SecretStorage` | Invocation capability; no raw credential |
@@ -159,12 +160,13 @@ Run **AI Orchestra: Configure Providers**:
 2. Select `codex-cli` → **Install official CLI** if needed → **Login with account**. Complete the official `codex login` browser flow with a ChatGPT account.
 3. Select `claude-code` → **Install official CLI** if needed → **Login with account**. Complete `claude auth login --claudeai` with a Claude Pro/Max/Team/Enterprise account supported by Claude Code.
 4. Select `antigravity-cli` → **Install official CLI** if needed → **Login with account**. Complete Google sign-in inside `agy`. Gemini CLI account access was retired by Google on June 18, 2026; AI Orchestra therefore uses its supported successor, Antigravity CLI.
-5. Select `gemini` → **Sign in with Google OAuth** only for direct Gemini API/project access. Create a Google OAuth client of type **Desktop app**, enable the Generative Language API, configure its consent screen, and provide its client ID, client secret and billing/quota project ID. The browser returns to a random loopback port; this flow is intended for a local desktop extension host.
-6. Google OAuth can be revoked with **Sign out Google OAuth**. Selecting **Save API key** switches Gemini back to API-key mode.
+5. Select `grok-cli` → **Install official CLI** if needed → **Login with account**. Complete the official `grok login` browser flow with an xAI/Grok account.
+6. Select `gemini` → **Sign in with Google OAuth** only for direct Gemini API/project access. Create a Google OAuth client of type **Desktop app**, enable the Generative Language API, configure its consent screen, and provide its client ID, client secret and billing/quota project ID. The browser returns to a random loopback port; this flow is intended for a local desktop extension host.
+7. Google OAuth can be revoked with **Sign out Google OAuth**. Selecting **Save API key** switches Gemini back to API-key mode.
 
 The same actions are available without the Command Palette: open the AI Orchestra activity bar, expand **Providers**, and click a provider row. The row opens that provider's login/logout/configuration menu. After an account login, AI Orchestra checks authentication in the background and updates the row to **Authenticated / Available**; **Check authentication** performs the same check immediately.
 
-Codex, Claude Code and Antigravity keep their own account credentials outside AI Orchestra, so their sessions survive VS Code restarts according to each official CLI's policy. AI Orchestra stores only the last successful verification timestamp in VS Code global state, restores a temporary **Previously authenticated · checking…** status at startup, and then revalidates the real CLI session. It never copies or stores those CLI tokens.
+Codex, Claude Code, Antigravity and Grok Build keep their own account credentials outside AI Orchestra, so their sessions survive VS Code restarts according to each official CLI's policy. AI Orchestra stores only the last successful verification timestamp in VS Code global state, restores a temporary **Previously authenticated · checking…** status at startup, and then revalidates the real CLI session. It never copies or stores those CLI tokens.
 
 The Providers sidebar reports each account CLI's installation, version, authentication, and account/subscription type when available. Click a CLI provider and choose **Check CLI status** for a fresh check and its resolved executable path. For example, an authenticated account may show `Available · codex-cli 0.155.1 · ChatGPT`, while a missing CLI shows `Not installed`.
 
@@ -183,7 +185,7 @@ Assignments are stored per VS Code workspace. Enforcement happens before provide
 
 ### Billing mode
 
-The default is **Subscription / Free only**. AI Orchestra permits account-backed Codex, Claude Code, Google Antigravity, GitHub/VS Code models and local Ollama, while blocking direct OpenAI, Anthropic and Gemini API adapters that may consume credits.
+The default is **Subscription / Free only**. AI Orchestra permits account-backed Codex, Claude Code, Google Antigravity, Grok Build, GitHub/VS Code models and local Ollama, while blocking direct OpenAI, Anthropic and Gemini API adapters that may consume credits.
 
 To use API credits, click **Billing Mode** and select **Credit with confirmation**. A modal confirmation is required before every individual credit-backed provider request. Approval is never cached for the goal, session, provider or model; cancelling the modal denies that request.
 
