@@ -164,6 +164,8 @@ Run **AI Orchestra: Configure Providers**:
 
 The same actions are available without the Command Palette: open the AI Orchestra activity bar, expand **Providers**, and click a provider row. The row opens that provider's login/logout/configuration menu. After an account login, AI Orchestra checks authentication in the background and updates the row to **Authenticated / Available**; **Check authentication** performs the same check immediately.
 
+Codex, Claude Code and Antigravity keep their own account credentials outside AI Orchestra, so their sessions survive VS Code restarts according to each official CLI's policy. AI Orchestra stores only the last successful verification timestamp in VS Code global state, restores a temporary **Previously authenticated · checking…** status at startup, and then revalidates the real CLI session. It never copies or stores those CLI tokens.
+
 The direct OpenAI and Anthropic API adapters still use API keys. Account subscriptions are exposed as separate `codex-cli` and `claude-code` providers because their official OAuth credentials are scoped to those clients. AI Orchestra deliberately does not extract or reuse their browser/CLI tokens.
 
 Choosing **Login with account** now installs/updates the selected official CLI before launching its login command. This avoids `codex/claude is not recognized` on a new machine. Provider execution also falls back to the official npm package through `npx` when a global binary cannot be resolved from `PATH`.
