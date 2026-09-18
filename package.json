@@ -2,7 +2,7 @@
   "name": "ai-orchestra",
   "displayName": "AI Orchestra",
   "description": "Multi-model AI orchestrator with smart budget management",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "publisher": "ai-orchestra",
   "repository": {
     "type": "git",
