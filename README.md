@@ -156,7 +156,18 @@ Run **AI Orchestra: Configure Providers**:
 2. Select `gemini` → **Sign in with Google OAuth** for Google account login. Create a Google OAuth client of type **Desktop app**, enable the Generative Language API, configure its consent screen, and provide its client ID, client secret and billing/quota project ID. The browser returns to a random loopback port; this flow is intended for a local desktop extension host.
 3. Google OAuth can be revoked with **Sign out Google OAuth**. Selecting **Save API key** switches Gemini back to API-key mode.
 
+The same actions are available without the Command Palette: open the AI Orchestra activity bar, expand **Providers**, and click a provider row. The row opens that provider's login/logout/configuration menu.
+
 OpenAI and Anthropic inference still require API keys because their public API documentation does not provide a general end-user OAuth grant for arbitrary third-party extensions. AI Orchestra deliberately does not import Codex CLI, Claude Code or browser session tokens.
+
+### Model permissions
+
+Click **Model Permissions** in the AI Orchestra sidebar, or run **AI Orchestra: Manage Model Permissions**:
+
+- **Open**: every agent role may invoke every configured model.
+- **Restricted**: a role is denied by default and may invoke only the selected models. Configure `supervisor`, `planner`, `coder`, `auditor`, `reviewer`, and `tester` separately.
+
+Assignments are stored per VS Code workspace. Enforcement happens before provider invocation, not only in the UI. A denied provider/model is skipped through the normal fallback path; if no permitted model is available, the task fails with an explicit permission error.
 
 Raw credentials are loaded only by the extension host into provider adapters. Supervisor
 and worker agents never receive their values. Removing a key/token clears `SecretStorage`
