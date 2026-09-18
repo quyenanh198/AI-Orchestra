@@ -126,6 +126,8 @@
           "enum": [
             "auto",
             "vscode-lm",
+            "codex-cli",
+            "claude-code",
             "openai",
             "anthropic",
             "gemini",
@@ -138,6 +140,8 @@
           "type": "array",
           "default": [
             "vscode-lm",
+            "codex-cli",
+            "claude-code",
             "openai",
             "anthropic",
             "gemini",

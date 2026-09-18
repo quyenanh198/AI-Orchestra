@@ -9,6 +9,7 @@ import { GoogleOAuthManager } from './security/google-oauth';
 import { GeminiProvider } from './providers/gemini-provider';
 import { ModelPermissionManager, PermissionMode } from './security/model-permissions';
 import { AgentRole } from './agents/types';
+import { CliAgentProvider } from './providers/cli-agent-provider';
 
 export function registerCommands(
     context: vscode.ExtensionContext,
@@ -28,8 +29,20 @@ export function registerCommands(
     return [
         vscode.commands.registerCommand('ai-orchestra.openChat', () => vscode.commands.executeCommand('ai-orchestra.chatView.focus')),
         vscode.commands.registerCommand('ai-orchestra.configure', async (requestedProvider?: string) => {
-            const providerId = requestedProvider || await vscode.window.showQuickPick(['vscode-lm', 'openai', 'anthropic', 'gemini', 'ollama'], { placeHolder: 'Select a provider' });
+            const providerId = requestedProvider || await vscode.window.showQuickPick(['vscode-lm', 'codex-cli', 'claude-code', 'gemini', 'openai', 'anthropic', 'ollama'], { placeHolder: 'Select a provider' });
             if (!providerId) return;
+            if (providerId === 'codex-cli' || providerId === 'claude-code') {
+                const provider = registry.getProvider(providerId) as CliAgentProvider;
+                const action = await vscode.window.showQuickPick(['Login with account', 'Check authentication', 'Logout'], { placeHolder: `${provider.name}: account authentication` });
+                if (action === 'Login with account') provider.openLoginTerminal();
+                if (action === 'Logout') provider.openLogoutTerminal();
+                if (action === 'Check authentication') {
+                    const authenticated = await provider.isAvailable();
+                    sidebarProvider.updateProviderStatus(providerId, authenticated ? 'Authenticated' : 'Not authenticated / CLI missing');
+                    vscode.window.showInformationMessage(`${provider.name}: ${authenticated ? 'authenticated' : 'not authenticated or CLI not installed'}.`);
+                }
+                return;
+            }
             if (providerId === 'vscode-lm') {
                 const provider = registry.getProvider(providerId) as VSCodeLanguageModelProvider;
                 const account = await provider.signIn();

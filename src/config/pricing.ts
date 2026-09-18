@@ -18,7 +18,7 @@ const CONSERVATIVE_UNKNOWN_PRICING = { inputPricePerMToken: 15, outputPricePerMT
  * @returns The cost in USD.
  */
 export function calculateCost(model: string, inputTokens: number, outputTokens: number, provider?: string): number {
-    const pricing = provider === 'ollama' || provider === 'vscode-lm'
+    const pricing = ['ollama', 'vscode-lm', 'codex-cli', 'claude-code'].includes(provider || '')
         ? { inputPricePerMToken: 0, outputPricePerMToken: 0 }
         : PRICING_TABLE[model] || CONSERVATIVE_UNKNOWN_PRICING;
     const inputCost = (inputTokens / 1_000_000) * pricing.inputPricePerMToken;

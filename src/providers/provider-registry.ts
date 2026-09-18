@@ -4,6 +4,7 @@ import { AnthropicProvider } from './anthropic-provider';
 import { GeminiProvider } from './gemini-provider';
 import { OllamaProvider } from './ollama-provider';
 import { VSCodeLanguageModelProvider } from './vscode-lm-provider';
+import { CliAgentProvider } from './cli-agent-provider';
 
 export class ProviderRegistry {
     private static instance: ProviderRegistry;
@@ -24,6 +25,8 @@ export class ProviderRegistry {
         this.registerProvider(new GeminiProvider());
         this.registerProvider(new OllamaProvider());
         this.registerProvider(new VSCodeLanguageModelProvider());
+        this.registerProvider(new CliAgentProvider('codex'));
+        this.registerProvider(new CliAgentProvider('claude'));
     }
 
     public registerProvider(provider: AIProvider): void {

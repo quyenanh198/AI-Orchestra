@@ -197,6 +197,10 @@ async function loadProviderKeys(
     }
     const vscodeModels = registry.getProvider('vscode-lm');
     sidebar.updateProviderStatus('vscode-lm', vscodeModels && await vscodeModels.isAvailable() ? 'Available' : 'Sign in required');
+    for (const id of ['codex-cli', 'claude-code']) {
+        const provider = registry.getProvider(id);
+        sidebar.updateProviderStatus(id, provider && await provider.isAvailable() ? 'Authenticated' : 'Login / install CLI');
+    }
 }
 
 export function deactivate(): void {}

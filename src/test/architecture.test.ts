@@ -64,3 +64,12 @@ test('restricted mode enforces per-role model assignments at invocation time', a
   assert.match(broker, /permissions\.isAllowed/);
   assert.match(broker, /Model permission denied/);
 });
+
+test('account-backed CLI providers invoke official CLIs without reading their tokens', async () => {
+  const cli = await read('src/providers/cli-agent-provider.ts');
+  assert.match(cli, /codex.*login.*status/s);
+  assert.match(cli, /claude.*auth.*status/s);
+  assert.match(cli, /sandbox', 'read-only/);
+  assert.match(cli, /permission-mode', 'plan/);
+  assert.doesNotMatch(cli, /\.codex|\.claude|credentials\.json|oauth_creds/);
+});
