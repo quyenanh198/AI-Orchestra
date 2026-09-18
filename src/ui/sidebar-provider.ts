@@ -61,7 +61,12 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             permissions.iconPath = new vscode.ThemeIcon(this.permissionMode === 'open' ? 'unlock' : 'lock');
             permissions.command = { command: 'ai-orchestra.manageModelPermissions', title: 'Manage Model Permissions' };
 
-            return Promise.resolve([providersRoot, permissions, agentsRoot, usageRoot]);
+            const recommendations = new vscode.TreeItem('Recommended Extensions', vscode.TreeItemCollapsibleState.None);
+            recommendations.description = 'Add AI integrations';
+            recommendations.iconPath = new vscode.ThemeIcon('extensions');
+            recommendations.command = { command: 'ai-orchestra.installRecommendations', title: 'Install Recommended Extensions' };
+
+            return Promise.resolve([providersRoot, permissions, recommendations, agentsRoot, usageRoot]);
         }
 
         if (element.label === 'Providers') {

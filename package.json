@@ -35,6 +35,10 @@
         "title": "AI Orchestra: Manage Model Permissions"
       },
       {
+        "command": "ai-orchestra.installRecommendations",
+        "title": "AI Orchestra: Install Recommended Extensions"
+      },
+      {
         "command": "ai-orchestra.showUsage",
         "title": "AI Orchestra: Show Usage Dashboard"
       },

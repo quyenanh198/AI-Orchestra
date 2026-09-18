@@ -20,6 +20,11 @@ export function registerCommands(
     googleOAuth: GoogleOAuthManager,
     modelPermissions: ModelPermissionManager,
 ): vscode.Disposable[] {
+    const recommendedExtensions = [
+        { id: 'GitHub.copilot-chat', label: 'GitHub Copilot', description: 'Directly supplies account-backed VS Code language models to AI Orchestra' },
+        { id: 'ms-windows-ai-studio.windows-ai-studio', label: 'Microsoft Foundry Toolkit', description: 'Discover, test and deploy local or hosted AI models and agents' },
+        { id: 'Continue.continue', label: 'Continue', description: 'Open-source AI coding agent and model client' },
+    ];
     return [
         vscode.commands.registerCommand('ai-orchestra.openChat', () => vscode.commands.executeCommand('ai-orchestra.chatView.focus')),
         vscode.commands.registerCommand('ai-orchestra.configure', async (requestedProvider?: string) => {
@@ -103,6 +108,27 @@ export function registerCommands(
             if (!chosen) return;
             await modelPermissions.setAssignments(role, chosen.map(item => item.key));
             vscode.window.showInformationMessage(`${role}: ${chosen.length} model permission(s) saved for this workspace.`);
+        }),
+        vscode.commands.registerCommand('ai-orchestra.installRecommendations', async () => {
+            const choices = recommendedExtensions.map(extension => ({
+                ...extension,
+                picked: extension.id === 'GitHub.copilot-chat',
+                detail: vscode.extensions.getExtension(extension.id) ? 'Installed' : undefined,
+            }));
+            const selected = await vscode.window.showQuickPick(choices, {
+                canPickMany: true,
+                placeHolder: 'Select recommended AI extensions to install',
+            });
+            if (!selected?.length) return;
+            let installed = 0;
+            for (const extension of selected) {
+                if (vscode.extensions.getExtension(extension.id)) continue;
+                await vscode.commands.executeCommand('workbench.extensions.installExtension', extension.id);
+                installed += 1;
+            }
+            vscode.window.showInformationMessage(installed
+                ? `Installed ${installed} recommended extension(s). Reload VS Code if prompted.`
+                : 'All selected extensions are already installed.');
         }),
         vscode.commands.registerCommand('ai-orchestra.showUsage', () => vscode.commands.executeCommand('ai-orchestra.usage.focus')),
         vscode.commands.registerCommand('ai-orchestra.switchModel', async () => {
