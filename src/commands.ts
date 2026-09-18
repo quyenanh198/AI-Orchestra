@@ -31,15 +31,18 @@ export function registerCommands(
     return [
         vscode.commands.registerCommand('ai-orchestra.openChat', () => vscode.commands.executeCommand('ai-orchestra.chatView.focus')),
         vscode.commands.registerCommand('ai-orchestra.configure', async (requestedProvider?: string) => {
-            const providerId = requestedProvider || await vscode.window.showQuickPick(['vscode-lm', 'codex-cli', 'claude-code', 'gemini', 'openai', 'anthropic', 'ollama'], { placeHolder: 'Select a provider' });
+            const providerId = requestedProvider || await vscode.window.showQuickPick(['vscode-lm', 'codex-cli', 'claude-code', 'gemini-cli', 'gemini', 'openai', 'anthropic', 'ollama'], { placeHolder: 'Select a provider' });
             if (!providerId) return;
-            if (providerId === 'codex-cli' || providerId === 'claude-code') {
+            if (['codex-cli', 'claude-code', 'gemini-cli'].includes(providerId)) {
                 const provider = registry.getProvider(providerId) as CliAgentProvider;
-                const action = await vscode.window.showQuickPick(['Login with account', 'Check authentication', 'Install official CLI', 'Logout'], { placeHolder: `${provider.name}: account authentication` });
+                const cliActions = providerId === 'gemini-cli'
+                    ? ['Login with account', 'Check CLI installation', 'Install official CLI']
+                    : ['Login with account', 'Check authentication', 'Install official CLI', 'Logout'];
+                const action = await vscode.window.showQuickPick(cliActions, { placeHolder: `${provider.name}: account authentication` });
                 if (action === 'Login with account') provider.openLoginTerminal();
                 if (action === 'Install official CLI') provider.openInstallTerminal();
                 if (action === 'Logout') provider.openLogoutTerminal();
-                if (action === 'Check authentication') {
+                if (action === 'Check authentication' || action === 'Check CLI installation') {
                     const authenticated = await provider.isAvailable();
                     sidebarProvider.updateProviderStatus(providerId, authenticated ? 'Authenticated' : 'Not authenticated / CLI missing');
                     vscode.window.showInformationMessage(`${provider.name}: ${authenticated ? 'authenticated' : 'not authenticated or CLI not installed'}.`);

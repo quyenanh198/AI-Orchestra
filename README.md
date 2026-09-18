@@ -145,6 +145,7 @@ AI Orchestra supports account login only where the provider exposes an official 
 | GitHub Copilot / VS Code models | VS Code GitHub account + model consent | Managed by VS Code; not copied to extension storage | Invocation through VS Code Language Model API |
 | OpenAI Codex | ChatGPT account through official Codex CLI | Managed by Codex CLI; never read by AI Orchestra | Read-only `codex exec` invocation |
 | Claude Code | Claude.ai account through official Claude Code CLI | Managed by Claude Code; never read by AI Orchestra | Plan-mode `claude -p` invocation |
+| Gemini CLI | Google account through official Gemini CLI | Managed by Gemini CLI; never read by AI Orchestra | Sandboxed headless Gemini invocation |
 | OpenAI | API key | VS Code `SecretStorage` | Invocation capability; no raw key |
 | Anthropic | API key | VS Code `SecretStorage` | Invocation capability; no raw key |
 | Gemini | Google OAuth desktop flow or API key | Refresh token/client secret or API key in VS Code `SecretStorage` | Invocation capability; no raw credential |
@@ -157,8 +158,9 @@ Run **AI Orchestra: Configure Providers**:
 1. Select `vscode-lm` to sign in through VS Code's built-in GitHub authentication. VS Code and the model provider show their own consent dialogs. A Copilot plan/model entitlement may be required.
 2. Select `codex-cli` → **Install official CLI** if needed → **Login with account**. Complete the official `codex login` browser flow with a ChatGPT account.
 3. Select `claude-code` → **Install official CLI** if needed → **Login with account**. Complete `claude auth login --claudeai` with a Claude Pro/Max/Team/Enterprise account supported by Claude Code.
-4. Select `gemini` → **Sign in with Google OAuth** for Google account login. Create a Google OAuth client of type **Desktop app**, enable the Generative Language API, configure its consent screen, and provide its client ID, client secret and billing/quota project ID. The browser returns to a random loopback port; this flow is intended for a local desktop extension host.
-5. Google OAuth can be revoked with **Sign out Google OAuth**. Selecting **Save API key** switches Gemini back to API-key mode.
+4. Select `gemini-cli` → **Install official CLI** if needed → **Login with account**. Choose **Sign in with Google** in the official Gemini CLI.
+5. Select `gemini` → **Sign in with Google OAuth** only for direct Gemini API/project access. Create a Google OAuth client of type **Desktop app**, enable the Generative Language API, configure its consent screen, and provide its client ID, client secret and billing/quota project ID. The browser returns to a random loopback port; this flow is intended for a local desktop extension host.
+6. Google OAuth can be revoked with **Sign out Google OAuth**. Selecting **Save API key** switches Gemini back to API-key mode.
 
 The same actions are available without the Command Palette: open the AI Orchestra activity bar, expand **Providers**, and click a provider row. The row opens that provider's login/logout/configuration menu.
 
@@ -172,6 +174,12 @@ Click **Model Permissions** in the AI Orchestra sidebar, or run **AI Orchestra: 
 - **Restricted**: a role is denied by default and may invoke only the selected models. Configure `supervisor`, `planner`, `coder`, `auditor`, `reviewer`, and `tester` separately.
 
 Assignments are stored per VS Code workspace. Enforcement happens before provider invocation, not only in the UI. A denied provider/model is skipped through the normal fallback path; if no permitted model is available, the task fails with an explicit permission error.
+
+### Billing mode
+
+The default is **Subscription / Free only**. AI Orchestra permits account-backed Codex, Claude Code, Gemini CLI, GitHub/VS Code models and local Ollama, while blocking direct OpenAI, Anthropic and Gemini API adapters that may consume credits.
+
+To use API credits, click **Billing Mode** and select **Credit with confirmation**. A modal confirmation is required before every individual credit-backed provider request. Approval is never cached for the goal, session, provider or model; cancelling the modal denies that request.
 
 ### Recommended extensions
 

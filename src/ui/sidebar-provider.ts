@@ -82,6 +82,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
                 { id: 'vscode-lm', label: 'GitHub Copilot / VS Code' },
                 { id: 'codex-cli', label: 'OpenAI Codex / ChatGPT Account' },
                 { id: 'claude-code', label: 'Claude Code / Claude Account' },
+                { id: 'gemini-cli', label: 'Gemini CLI / Google Account' },
                 { id: 'openai', label: 'OpenAI' },
                 { id: 'anthropic', label: 'Anthropic' },
                 { id: 'gemini', label: 'Google Gemini' },
