@@ -23,6 +23,25 @@ export function registerCommands(
     modelPermissions: ModelPermissionManager,
     billingPolicy: BillingPolicy,
 ): vscode.Disposable[] {
+    const refreshAccountProvider = async (providerId: string, notify = true): Promise<boolean> => {
+        const provider = registry.getProvider(providerId);
+        const available = Boolean(provider && await provider.isAvailable());
+        sidebarProvider.updateProviderStatus(providerId, available ? 'Authenticated / Available' : 'Login / install CLI');
+        if (notify) vscode.window.showInformationMessage(`${provider?.name || providerId}: ${available ? 'authenticated and available' : 'not authenticated or CLI not installed'}.`);
+        return available;
+    };
+    const watchAccountLogin = (providerId: string): void => {
+        let attempts = 0;
+        const timer = setInterval(() => {
+            void refreshAccountProvider(providerId, false).then(available => {
+                attempts += 1;
+                if (available || attempts >= 36) {
+                    clearInterval(timer);
+                    if (available) vscode.window.showInformationMessage(`${registry.getProvider(providerId)?.name}: login detected; models are now available.`);
+                }
+            });
+        }, 5_000);
+    };
     const recommendedExtensions = [
         { id: 'GitHub.copilot-chat', label: 'GitHub Copilot', description: 'Directly supplies account-backed VS Code language models to AI Orchestra' },
         { id: 'ms-windows-ai-studio.windows-ai-studio', label: 'Microsoft Foundry Toolkit', description: 'Discover, test and deploy local or hosted AI models and agents' },
@@ -31,22 +50,16 @@ export function registerCommands(
     return [
         vscode.commands.registerCommand('ai-orchestra.openChat', () => vscode.commands.executeCommand('ai-orchestra.chatView.focus')),
         vscode.commands.registerCommand('ai-orchestra.configure', async (requestedProvider?: string) => {
-            const providerId = requestedProvider || await vscode.window.showQuickPick(['vscode-lm', 'codex-cli', 'claude-code', 'gemini-cli', 'gemini', 'openai', 'anthropic', 'ollama'], { placeHolder: 'Select a provider' });
+            const providerId = requestedProvider || await vscode.window.showQuickPick(['vscode-lm', 'codex-cli', 'claude-code', 'antigravity-cli', 'gemini', 'openai', 'anthropic', 'ollama'], { placeHolder: 'Select a provider' });
             if (!providerId) return;
-            if (['codex-cli', 'claude-code', 'gemini-cli'].includes(providerId)) {
+            if (['codex-cli', 'claude-code', 'antigravity-cli'].includes(providerId)) {
                 const provider = registry.getProvider(providerId) as CliAgentProvider;
-                const cliActions = providerId === 'gemini-cli'
-                    ? ['Login with account', 'Check CLI installation', 'Install official CLI']
-                    : ['Login with account', 'Check authentication', 'Install official CLI', 'Logout'];
+                const cliActions = ['Login with account', 'Check authentication', 'Install official CLI', 'Logout'];
                 const action = await vscode.window.showQuickPick(cliActions, { placeHolder: `${provider.name}: account authentication` });
-                if (action === 'Login with account') provider.openLoginTerminal();
+                if (action === 'Login with account') { provider.openLoginTerminal(); watchAccountLogin(providerId); }
                 if (action === 'Install official CLI') provider.openInstallTerminal();
                 if (action === 'Logout') provider.openLogoutTerminal();
-                if (action === 'Check authentication' || action === 'Check CLI installation') {
-                    const authenticated = await provider.isAvailable();
-                    sidebarProvider.updateProviderStatus(providerId, authenticated ? 'Authenticated' : 'Not authenticated / CLI missing');
-                    vscode.window.showInformationMessage(`${provider.name}: ${authenticated ? 'authenticated' : 'not authenticated or CLI not installed'}.`);
-                }
+                if (action === 'Check authentication') await refreshAccountProvider(providerId);
                 return;
             }
             if (providerId === 'vscode-lm') {
@@ -163,8 +176,10 @@ export function registerCommands(
         }),
         vscode.commands.registerCommand('ai-orchestra.showUsage', () => vscode.commands.executeCommand('ai-orchestra.usage.focus')),
         vscode.commands.registerCommand('ai-orchestra.switchModel', async () => {
-            const choices = registry.getAllProviders().flatMap(provider => provider.models.map(model => ({ label: model.name, description: provider.name, model: model.id })));
-            const selected = await vscode.window.showQuickPick(choices, { placeHolder: 'Select model for display; routing still enforces budget and availability' });
+            const providers = await registry.getAvailableProviders();
+            const choices = providers.flatMap(provider => provider.models.map(model => ({ label: model.name, description: `${provider.name} · Available`, model: model.id })));
+            if (!choices.length) { vscode.window.showWarningMessage('No authenticated or running AI provider is currently available. Login or configure a provider first.'); return; }
+            const selected = await vscode.window.showQuickPick(choices, { placeHolder: 'Select an available model' });
             if (selected) {
                 statusBarManager.updateModel(selected.model);
                 chatPanelProvider.postMessage('modelsUpdated', { models: [selected.model] });

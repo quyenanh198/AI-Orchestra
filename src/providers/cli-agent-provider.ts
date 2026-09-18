@@ -1,11 +1,14 @@
 import * as vscode from 'vscode';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { AIProvider, ChatChunk, ChatOptions, ChatResponse, Message, ModelInfo, ProviderConfig, RateLimitStatus } from './types';
 
 const execFileAsync = promisify(execFile);
 
-type CliKind = 'codex' | 'claude' | 'gemini';
+type CliKind = 'codex' | 'claude' | 'antigravity';
 interface CliCommand { executable: string; prefix: string[]; }
 
 export class CliAgentProvider implements AIProvider {
@@ -14,14 +17,18 @@ export class CliAgentProvider implements AIProvider {
   public readonly models: ModelInfo[];
 
   constructor(private readonly kind: CliKind) {
-    this.id = kind === 'codex' ? 'codex-cli' : kind === 'claude' ? 'claude-code' : 'gemini-cli';
-    this.name = kind === 'codex' ? 'OpenAI Codex (ChatGPT login)' : kind === 'claude' ? 'Claude Code (Claude login)' : 'Gemini CLI (Google login)';
+    this.id = kind === 'codex' ? 'codex-cli' : kind === 'claude' ? 'claude-code' : 'antigravity-cli';
+    this.name = kind === 'codex' ? 'OpenAI Codex (ChatGPT login)' : kind === 'claude' ? 'Claude Code (Claude login)' : 'Google Antigravity (Google login)';
     this.models = kind === 'codex'
       ? [{ id: 'codex-default', name: 'Codex account default', provider: this.id, maxContextTokens: 200_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'premium' }]
       : kind === 'claude' ? [
           { id: 'sonnet', name: 'Claude Sonnet (account)', provider: this.id, maxContextTokens: 200_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'standard' },
           { id: 'opus', name: 'Claude Opus (account)', provider: this.id, maxContextTokens: 200_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'premium' },
-        ] : [{ id: 'gemini-default', name: 'Gemini account default', provider: this.id, maxContextTokens: 1_000_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'standard' }];
+        ] : [
+          { id: 'gemini-3.8-flash-high', name: 'Gemini 3.8 Flash High', provider: this.id, maxContextTokens: 1_000_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'standard' },
+          { id: 'gemini-3.1-pro-high', name: 'Gemini 3.1 Pro High', provider: this.id, maxContextTokens: 1_000_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'premium' },
+          { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 via Antigravity', provider: this.id, maxContextTokens: 200_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'standard' },
+        ];
   }
 
   public async isAvailable(): Promise<boolean> {
@@ -31,9 +38,9 @@ export class CliAgentProvider implements AIProvider {
         const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'login', 'status'], { timeout: 10_000, windowsHide: true });
         return /logged in|chatgpt|api key/i.test(stdout);
       }
-      if (this.kind === 'gemini') {
-        await execFileAsync(command.executable, [...command.prefix, '--version'], { timeout: 10_000, windowsHide: true });
-        return true;
+      if (this.kind === 'antigravity') {
+        const { stdout } = await execFileAsync(command.executable, ['-p', '/usage', '--output-format', 'json', '--print-timeout', '10s'], { timeout: 15_000, windowsHide: true });
+        return !/authentication required/i.test(stdout);
       }
       const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'auth', 'status', '--json'], { timeout: 10_000, windowsHide: true });
       return JSON.parse(stdout).loggedIn === true;
@@ -43,21 +50,22 @@ export class CliAgentProvider implements AIProvider {
   public openLoginTerminal(): void {
     const terminal = vscode.window.createTerminal({ name: `${this.name} Login` });
     terminal.show();
-    terminal.sendText(`npm install -g ${this.packageName()}`, true);
-    terminal.sendText(this.kind === 'codex' ? 'codex login' : this.kind === 'claude' ? 'claude auth login --claudeai' : 'gemini', true);
+    if (this.kind === 'antigravity') terminal.sendText(process.platform === 'win32' ? 'irm https://antigravity.google/cli/install.ps1 | iex' : 'curl -fsSL https://antigravity.google/cli/install.sh | bash', true);
+    else terminal.sendText(`npm install -g ${this.packageName()}`, true);
+    terminal.sendText(this.kind === 'codex' ? 'codex login' : this.kind === 'claude' ? 'claude auth login --claudeai' : 'agy', true);
   }
 
   public openInstallTerminal(): void {
     const terminal = vscode.window.createTerminal({ name: `Install ${this.name}` });
     terminal.show();
-    terminal.sendText(this.kind === 'codex' ? 'npm install -g @openai/codex' : this.kind === 'claude' ? 'npm install -g @anthropic-ai/claude-code' : 'npm install -g @google/gemini-cli', true);
+    terminal.sendText(this.kind === 'codex' ? 'npm install -g @openai/codex' : this.kind === 'claude' ? 'npm install -g @anthropic-ai/claude-code' : process.platform === 'win32' ? 'irm https://antigravity.google/cli/install.ps1 | iex' : 'curl -fsSL https://antigravity.google/cli/install.sh | bash', true);
   }
 
   public openLogoutTerminal(): void {
     const terminal = vscode.window.createTerminal({ name: `${this.name} Logout` });
     terminal.show();
     const runner = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-    terminal.sendText(this.kind === 'codex' ? `${runner} --yes ${this.packageName()} logout` : this.kind === 'claude' ? `${runner} --yes ${this.packageName()} auth logout` : `${runner} --yes ${this.packageName()}`, true);
+    terminal.sendText(this.kind === 'codex' ? `${runner} --yes ${this.packageName()} logout` : this.kind === 'claude' ? `${runner} --yes ${this.packageName()} auth logout` : 'agy', true);
   }
 
   public getRateLimitStatus(): RateLimitStatus {
@@ -69,7 +77,7 @@ export class CliAgentProvider implements AIProvider {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
     return this.kind === 'codex' ? this.runCodex(prompt, cwd, options)
       : this.kind === 'claude' ? this.runClaude(prompt, cwd, options)
-      : this.runGemini(prompt, cwd, options);
+      : this.runAntigravity(prompt, cwd, options);
   }
 
   public async *stream(messages: Message[], options: ChatOptions = {}): AsyncGenerator<ChatChunk> {
@@ -111,30 +119,51 @@ export class CliAgentProvider implements AIProvider {
     return { content: data.result, model: options.model || 'sonnet', provider: this.id, finishReason: 'stop', usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, estimatedCost: 0 } };
   }
 
-  private async runGemini(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
+  private async runAntigravity(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
     const args = ['-p', prompt, '--output-format', 'json', '--sandbox'];
-    if (options.model && options.model !== 'gemini-default') args.push('--model', options.model);
+    if (options.model) args.push('--model', options.model);
     const command = await this.resolveCommand(true);
     const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
     const start = stdout.indexOf('{');
-    const data = JSON.parse(start >= 0 ? stdout.slice(start) : stdout) as { response?: string; error?: { message?: string } };
-    if (!data.response) throw new Error(data.error?.message || 'Gemini CLI returned no response. Complete Google login in an interactive terminal first.');
-    return { content: data.response, model: options.model || 'gemini-default', provider: this.id, finishReason: 'stop', usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCost: 0 } };
+    const data = JSON.parse(start >= 0 ? stdout.slice(start) : stdout) as { response?: string; error?: string; usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number } };
+    if (!data.response) throw new Error(data.error || 'Antigravity returned no response. Complete Google login in an interactive terminal first.');
+    const inputTokens = data.usage?.input_tokens || 0; const outputTokens = data.usage?.output_tokens || 0;
+    return { content: data.response, model: options.model || 'antigravity-default', provider: this.id, finishReason: 'stop', usage: { inputTokens, outputTokens, totalTokens: data.usage?.total_tokens || inputTokens + outputTokens, estimatedCost: 0 } };
   }
 
   private async resolveCommand(allowNpx: boolean): Promise<CliCommand> {
     const locator = process.platform === 'win32' ? 'where.exe' : 'which';
     try {
-      const { stdout } = await execFileAsync(locator, [this.kind], { timeout: 5_000, windowsHide: true });
+      const binary = this.kind === 'antigravity' ? 'agy' : this.kind;
+      const { stdout } = await execFileAsync(locator, [binary], { timeout: 5_000, windowsHide: true });
       const executable = stdout.split(/\r?\n/).find(Boolean);
       if (executable) return { executable: executable.trim(), prefix: [] };
     } catch { /* Fall back to the official npm package on user-initiated execution. */ }
-    if (!allowNpx) throw new Error(`${this.kind} CLI is not installed or not on PATH.`);
+    const explicit = await this.explicitInstallPath();
+    if (explicit) return { executable: explicit, prefix: [] };
+    if (!allowNpx || this.kind === 'antigravity') throw new Error(`${this.kind} CLI is not installed or not on PATH.`);
     const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
     return { executable: npx, prefix: ['--yes', this.packageName()] };
   }
 
   private packageName(): string {
-    return this.kind === 'codex' ? '@openai/codex' : this.kind === 'claude' ? '@anthropic-ai/claude-code' : '@google/gemini-cli';
+    if (this.kind === 'antigravity') throw new Error('Antigravity uses its native installer, not npm.');
+    return this.kind === 'codex' ? '@openai/codex' : '@anthropic-ai/claude-code';
+  }
+
+  private async explicitInstallPath(): Promise<string | undefined> {
+    if (this.kind === 'antigravity') {
+      const candidate = process.platform === 'win32'
+        ? join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'agy', 'bin', 'agy.exe')
+        : join(homedir(), '.local', 'bin', 'agy');
+      return existsSync(candidate) ? candidate : undefined;
+    }
+    try {
+      const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      const { stdout } = await execFileAsync(npm, ['prefix', '-g'], { timeout: 5_000, windowsHide: true });
+      const prefix = stdout.trim();
+      const candidate = process.platform === 'win32' ? join(prefix, `${this.kind}.cmd`) : join(prefix, 'bin', this.kind);
+      return existsSync(candidate) ? candidate : undefined;
+    } catch { return undefined; }
   }
 }

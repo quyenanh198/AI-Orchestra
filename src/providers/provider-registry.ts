@@ -27,7 +27,7 @@ export class ProviderRegistry {
         this.registerProvider(new VSCodeLanguageModelProvider());
         this.registerProvider(new CliAgentProvider('codex'));
         this.registerProvider(new CliAgentProvider('claude'));
-        this.registerProvider(new CliAgentProvider('gemini'));
+        this.registerProvider(new CliAgentProvider('antigravity'));
     }
 
     public registerProvider(provider: AIProvider): void {

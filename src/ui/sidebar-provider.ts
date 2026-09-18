@@ -82,7 +82,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
                 { id: 'vscode-lm', label: 'GitHub Copilot / VS Code' },
                 { id: 'codex-cli', label: 'OpenAI Codex / ChatGPT Account' },
                 { id: 'claude-code', label: 'Claude Code / Claude Account' },
-                { id: 'gemini-cli', label: 'Gemini CLI / Google Account' },
+                { id: 'antigravity-cli', label: 'Google Antigravity / Google Account' },
                 { id: 'openai', label: 'OpenAI' },
                 { id: 'anthropic', label: 'Anthropic' },
                 { id: 'gemini', label: 'Google Gemini' },
@@ -132,7 +132,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     }
 
     private getIconForStatus(status: string): string {
-        if (status === 'Available') { return 'check'; }
+        if (/Available|Authenticated|Signed in/i.test(status)) { return 'check'; }
         if (status === 'Not Configured' || status === 'Not configured') { return 'x'; }
         if (status === 'Rate limited') { return 'warning'; }
         if (status === 'Not Running') { return 'debug-disconnect'; }
