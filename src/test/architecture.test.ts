@@ -75,6 +75,7 @@ test('account-backed CLI providers invoke official CLIs without reading their to
   assert.match(cli, /antigravity\.google\/cli\/install\.ps1/);
   assert.match(cli, /npm.*prefix.*-g/s);
   assert.match(cli, /LOCALAPPDATA/);
+  assert.match(cli, /exe\|cmd\|bat/);
   assert.match(cli, /sandbox', 'read-only/);
   assert.match(cli, /permission-mode', 'plan/);
   assert.match(cli, /npm install -g/);
@@ -83,6 +84,15 @@ test('account-backed CLI providers invoke official CLIs without reading their to
   assert.match(manifest, /antigravity-cli/);
   assert.doesNotMatch(manifest, /gemini-cli/);
   assert.doesNotMatch(cli, /\.codex|\.claude|credentials\.json|oauth_creds/);
+});
+
+test('verified CLI login status is restored and revalidated on extension activation', async () => {
+  const extension = await read('src/extension.ts');
+  const commands = await read('src/commands.ts');
+  assert.match(extension, /Previously authenticated.*checking/);
+  assert.match(extension, /authVerified\.\$\{id\}/);
+  assert.match(extension, /await provider\.isAvailable\(\)/);
+  assert.match(commands, /globalState\.update\(`ai-orchestra\.authVerified/);
 });
 
 test('credit providers are blocked by default and require one-request confirmation', async () => {

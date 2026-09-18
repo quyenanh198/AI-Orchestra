@@ -35,8 +35,8 @@ export class CliAgentProvider implements AIProvider {
     try {
       const command = await this.resolveCommand(false);
       if (this.kind === 'codex') {
-        const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'login', 'status'], { timeout: 10_000, windowsHide: true });
-        return /logged in|chatgpt|api key/i.test(stdout);
+        const { stdout, stderr } = await execFileAsync(command.executable, [...command.prefix, 'login', 'status'], { timeout: 10_000, windowsHide: true });
+        return /logged in|chatgpt|api key/i.test(`${stdout}\n${stderr}`);
       }
       if (this.kind === 'antigravity') {
         const { stdout } = await execFileAsync(command.executable, ['-p', '/usage', '--output-format', 'json', '--print-timeout', '10s'], { timeout: 15_000, windowsHide: true });
@@ -136,7 +136,10 @@ export class CliAgentProvider implements AIProvider {
     try {
       const binary = this.kind === 'antigravity' ? 'agy' : this.kind;
       const { stdout } = await execFileAsync(locator, [binary], { timeout: 5_000, windowsHide: true });
-      const executable = stdout.split(/\r?\n/).find(Boolean);
+      const candidates = stdout.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+      const executable = process.platform === 'win32'
+        ? candidates.find(value => /\.(?:exe|cmd|bat)$/i.test(value))
+        : candidates[0];
       if (executable) return { executable: executable.trim(), prefix: [] };
     } catch { /* Fall back to the official npm package on user-initiated execution. */ }
     const explicit = await this.explicitInstallPath();

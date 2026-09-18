@@ -26,6 +26,7 @@ export function registerCommands(
     const refreshAccountProvider = async (providerId: string, notify = true): Promise<boolean> => {
         const provider = registry.getProvider(providerId);
         const available = Boolean(provider && await provider.isAvailable());
+        await context.globalState.update(`ai-orchestra.authVerified.${providerId}`, available ? Date.now() : undefined);
         sidebarProvider.updateProviderStatus(providerId, available ? 'Authenticated / Available' : 'Login / install CLI');
         if (notify) vscode.window.showInformationMessage(`${provider?.name || providerId}: ${available ? 'authenticated and available' : 'not authenticated or CLI not installed'}.`);
         return available;
@@ -58,7 +59,11 @@ export function registerCommands(
                 const action = await vscode.window.showQuickPick(cliActions, { placeHolder: `${provider.name}: account authentication` });
                 if (action === 'Login with account') { provider.openLoginTerminal(); watchAccountLogin(providerId); }
                 if (action === 'Install official CLI') provider.openInstallTerminal();
-                if (action === 'Logout') provider.openLogoutTerminal();
+                if (action === 'Logout') {
+                    provider.openLogoutTerminal();
+                    await context.globalState.update(`ai-orchestra.authVerified.${providerId}`, undefined);
+                    sidebarProvider.updateProviderStatus(providerId, 'Logout pending · check authentication');
+                }
                 if (action === 'Check authentication') await refreshAccountProvider(providerId);
                 return;
             }

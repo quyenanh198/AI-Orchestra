@@ -162,13 +162,14 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     // 8. Load API keys
-    void loadProviderKeys(context.secrets, registry, sidebarProvider, outputChannel, googleOAuth);
+    void loadProviderKeys(context.secrets, context.globalState, registry, sidebarProvider, outputChannel, googleOAuth);
 
     outputChannel.appendLine('AI Orchestra extension activated successfully.');
 }
 
 async function loadProviderKeys(
     secrets: vscode.SecretStorage,
+    state: vscode.Memento,
     registry: ProviderRegistry,
     sidebar: SidebarProvider,
     output: vscode.OutputChannel,
@@ -202,7 +203,11 @@ async function loadProviderKeys(
     sidebar.updateProviderStatus('vscode-lm', vscodeModels && await vscodeModels.isAvailable() ? 'Available' : 'Sign in required');
     for (const id of ['codex-cli', 'claude-code', 'antigravity-cli']) {
         const provider = registry.getProvider(id);
-        sidebar.updateProviderStatus(id, provider && await provider.isAvailable() ? 'Authenticated' : 'Login / install CLI');
+        if (state.get<number>(`ai-orchestra.authVerified.${id}`)) sidebar.updateProviderStatus(id, 'Previously authenticated · checking…');
+        const available = Boolean(provider && await provider.isAvailable());
+        await state.update(`ai-orchestra.authVerified.${id}`, available ? Date.now() : undefined);
+        sidebar.updateProviderStatus(id, available ? 'Authenticated / Available' : 'Login / install CLI');
+        output.appendLine(`${id}: ${available ? 'authenticated and available' : 'not authenticated or CLI unavailable'}.`);
     }
 }
 
