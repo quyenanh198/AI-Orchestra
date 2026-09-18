@@ -20,6 +20,7 @@ import { GoogleOAuthManager } from './security/google-oauth';
 import { GeminiProvider } from './providers/gemini-provider';
 import { ModelPermissionManager } from './security/model-permissions';
 import { BillingPolicy } from './security/billing-policy';
+import { CliAgentProvider } from './providers/cli-agent-provider';
 
 export function activate(context: vscode.ExtensionContext): void {
     const outputChannel = vscode.window.createOutputChannel('AI Orchestra');
@@ -202,12 +203,13 @@ async function loadProviderKeys(
     const vscodeModels = registry.getProvider('vscode-lm');
     sidebar.updateProviderStatus('vscode-lm', vscodeModels && await vscodeModels.isAvailable() ? 'Available' : 'Sign in required');
     for (const id of ['codex-cli', 'claude-code', 'antigravity-cli']) {
-        const provider = registry.getProvider(id);
+        const provider = registry.getProvider(id) as CliAgentProvider | undefined;
         if (state.get<number>(`ai-orchestra.authVerified.${id}`)) sidebar.updateProviderStatus(id, 'Previously authenticated · checking…');
-        const available = Boolean(provider && await provider.isAvailable());
+        const status = provider ? await provider.checkStatus() : { installed: false, authenticated: false };
+        const available = status.authenticated;
         await state.update(`ai-orchestra.authVerified.${id}`, available ? Date.now() : undefined);
-        sidebar.updateProviderStatus(id, available ? 'Authenticated / Available' : 'Login / install CLI');
-        output.appendLine(`${id}: ${available ? 'authenticated and available' : 'not authenticated or CLI unavailable'}.`);
+        sidebar.updateProviderStatus(id, provider?.formatStatus(status) || 'Unavailable');
+        output.appendLine(`${id}: ${provider?.formatStatus(status) || 'unavailable'}${status.executable ? ` (${status.executable})` : ''}.`);
     }
 }
 

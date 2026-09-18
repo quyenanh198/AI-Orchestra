@@ -10,6 +10,14 @@ const execFileAsync = promisify(execFile);
 
 type CliKind = 'codex' | 'claude' | 'antigravity';
 interface CliCommand { executable: string; prefix: string[]; }
+export interface CliStatus {
+  installed: boolean;
+  authenticated: boolean;
+  version?: string;
+  accountType?: string;
+  executable?: string;
+  error?: string;
+}
 
 export class CliAgentProvider implements AIProvider {
   public readonly id: string;
@@ -32,19 +40,40 @@ export class CliAgentProvider implements AIProvider {
   }
 
   public async isAvailable(): Promise<boolean> {
+    return (await this.checkStatus()).authenticated;
+  }
+
+  public async checkStatus(): Promise<CliStatus> {
     try {
       const command = await this.resolveCommand(false);
-      if (this.kind === 'codex') {
-        const { stdout, stderr } = await execFileAsync(command.executable, [...command.prefix, 'login', 'status'], { timeout: 10_000, windowsHide: true });
-        return /logged in|chatgpt|api key/i.test(`${stdout}\n${stderr}`);
+      const versionResult = await execFileAsync(command.executable, [...command.prefix, '--version'], { timeout: 10_000, windowsHide: true });
+      const version = `${versionResult.stdout}\n${versionResult.stderr}`.trim().split(/\r?\n/)[0];
+      try {
+        if (this.kind === 'codex') {
+          const { stdout, stderr } = await execFileAsync(command.executable, [...command.prefix, 'login', 'status'], { timeout: 10_000, windowsHide: true });
+          const authOutput = `${stdout}\n${stderr}`;
+          return { installed: true, authenticated: /logged in|chatgpt|api key/i.test(authOutput), version, accountType: /chatgpt/i.test(authOutput) ? 'ChatGPT' : undefined, executable: command.executable };
+        }
+        if (this.kind === 'antigravity') {
+          const { stdout } = await execFileAsync(command.executable, ['-p', '/usage', '--output-format', 'json', '--print-timeout', '10s'], { timeout: 15_000, windowsHide: true });
+          return { installed: true, authenticated: !/authentication required/i.test(stdout), version, accountType: 'Google', executable: command.executable };
+        }
+        const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'auth', 'status', '--json'], { timeout: 10_000, windowsHide: true });
+        const auth = JSON.parse(stdout) as { loggedIn?: boolean; authMethod?: string; subscriptionType?: string };
+        return { installed: true, authenticated: auth.loggedIn === true, version, accountType: auth.subscriptionType || auth.authMethod, executable: command.executable };
+      } catch (error) {
+        return { installed: true, authenticated: false, version, executable: command.executable, error: error instanceof Error ? error.message : String(error) };
       }
-      if (this.kind === 'antigravity') {
-        const { stdout } = await execFileAsync(command.executable, ['-p', '/usage', '--output-format', 'json', '--print-timeout', '10s'], { timeout: 15_000, windowsHide: true });
-        return !/authentication required/i.test(stdout);
-      }
-      const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'auth', 'status', '--json'], { timeout: 10_000, windowsHide: true });
-      return JSON.parse(stdout).loggedIn === true;
-    } catch { return false; }
+    } catch (error) {
+      return { installed: false, authenticated: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  public formatStatus(status: CliStatus): string {
+    if (!status.installed) return 'Not installed';
+    if (!status.authenticated) return `Not authenticated${status.version ? ` · ${status.version}` : ''}`;
+    const details = [status.version, status.accountType].filter(Boolean).join(' · ');
+    return `Available${details ? ` · ${details}` : ''}`;
   }
 
   public openLoginTerminal(): void {

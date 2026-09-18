@@ -24,11 +24,15 @@ export function registerCommands(
     billingPolicy: BillingPolicy,
 ): vscode.Disposable[] {
     const refreshAccountProvider = async (providerId: string, notify = true): Promise<boolean> => {
-        const provider = registry.getProvider(providerId);
-        const available = Boolean(provider && await provider.isAvailable());
+        const provider = registry.getProvider(providerId) as CliAgentProvider | undefined;
+        const status = provider ? await provider.checkStatus() : { installed: false, authenticated: false };
+        const available = status.authenticated;
         await context.globalState.update(`ai-orchestra.authVerified.${providerId}`, available ? Date.now() : undefined);
-        sidebarProvider.updateProviderStatus(providerId, available ? 'Authenticated / Available' : 'Login / install CLI');
-        if (notify) vscode.window.showInformationMessage(`${provider?.name || providerId}: ${available ? 'authenticated and available' : 'not authenticated or CLI not installed'}.`);
+        sidebarProvider.updateProviderStatus(providerId, provider?.formatStatus(status) || 'Unavailable');
+        if (notify) {
+            const detail = [provider?.name || providerId, provider?.formatStatus(status), status.executable].filter(Boolean).join('\n');
+            vscode.window.showInformationMessage(detail, { modal: true });
+        }
         return available;
     };
     const watchAccountLogin = (providerId: string): void => {
@@ -55,7 +59,7 @@ export function registerCommands(
             if (!providerId) return;
             if (['codex-cli', 'claude-code', 'antigravity-cli'].includes(providerId)) {
                 const provider = registry.getProvider(providerId) as CliAgentProvider;
-                const cliActions = ['Login with account', 'Check authentication', 'Install official CLI', 'Logout'];
+                const cliActions = ['Check CLI status', 'Login with account', 'Install official CLI', 'Logout'];
                 const action = await vscode.window.showQuickPick(cliActions, { placeHolder: `${provider.name}: account authentication` });
                 if (action === 'Login with account') { provider.openLoginTerminal(); watchAccountLogin(providerId); }
                 if (action === 'Install official CLI') provider.openInstallTerminal();
@@ -64,7 +68,7 @@ export function registerCommands(
                     await context.globalState.update(`ai-orchestra.authVerified.${providerId}`, undefined);
                     sidebarProvider.updateProviderStatus(providerId, 'Logout pending · check authentication');
                 }
-                if (action === 'Check authentication') await refreshAccountProvider(providerId);
+                if (action === 'Check CLI status') await refreshAccountProvider(providerId);
                 return;
             }
             if (providerId === 'vscode-lm') {
