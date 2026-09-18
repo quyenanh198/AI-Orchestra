@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { TaskRecord } from '../agents/types';
 import { BudgetStatus } from '../budget/budget-manager';
 import { UsageSummary } from '../budget/usage-tracker';
+import { PermissionMode } from '../security/model-permissions';
 
 export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
@@ -12,6 +13,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     private session?: UsageSummary;
     private daily?: UsageSummary;
     private budget?: BudgetStatus;
+    private permissionMode: PermissionMode = 'open';
 
     constructor() {}
 
@@ -36,6 +38,8 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
         this.refresh();
     }
 
+    updatePermissionMode(mode: PermissionMode): void { this.permissionMode = mode; this.refresh(); }
+
     getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
         return element;
     }
@@ -52,7 +56,12 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             const agentsRoot = new vscode.TreeItem('Agent Tasks', vscode.TreeItemCollapsibleState.Expanded);
             agentsRoot.contextValue = 'agentsRoot';
 
-            return Promise.resolve([providersRoot, agentsRoot, usageRoot]);
+            const permissions = new vscode.TreeItem('Model Permissions', vscode.TreeItemCollapsibleState.None);
+            permissions.description = this.permissionMode === 'open' ? 'Open' : 'Restricted';
+            permissions.iconPath = new vscode.ThemeIcon(this.permissionMode === 'open' ? 'unlock' : 'lock');
+            permissions.command = { command: 'ai-orchestra.manageModelPermissions', title: 'Manage Model Permissions' };
+
+            return Promise.resolve([providersRoot, permissions, agentsRoot, usageRoot]);
         }
 
         if (element.label === 'Providers') {
@@ -70,6 +79,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
                 item.description = status;
                 item.iconPath = new vscode.ThemeIcon(this.getIconForStatus(status));
                 item.contextValue = 'provider';
+                item.command = { command: 'ai-orchestra.configure', title: `Configure ${p.label}`, arguments: [p.id] };
                 return item;
             }));
         }

@@ -28,7 +28,11 @@
       },
       {
         "command": "ai-orchestra.configure",
-        "title": "AI Orchestra: Configure Providers"
+        "title": "AI Orchestra: Login / Configure Providers"
+      },
+      {
+        "command": "ai-orchestra.manageModelPermissions",
+        "title": "AI Orchestra: Manage Model Permissions"
       },
       {
         "command": "ai-orchestra.showUsage",

@@ -7,6 +7,8 @@ import { StatusBarManager } from './ui/status-bar';
 import { VSCodeLanguageModelProvider } from './providers/vscode-lm-provider';
 import { GoogleOAuthManager } from './security/google-oauth';
 import { GeminiProvider } from './providers/gemini-provider';
+import { ModelPermissionManager, PermissionMode } from './security/model-permissions';
+import { AgentRole } from './agents/types';
 
 export function registerCommands(
     context: vscode.ExtensionContext,
@@ -16,11 +18,12 @@ export function registerCommands(
     sidebarProvider: SidebarProvider,
     statusBarManager: StatusBarManager,
     googleOAuth: GoogleOAuthManager,
+    modelPermissions: ModelPermissionManager,
 ): vscode.Disposable[] {
     return [
         vscode.commands.registerCommand('ai-orchestra.openChat', () => vscode.commands.executeCommand('ai-orchestra.chatView.focus')),
-        vscode.commands.registerCommand('ai-orchestra.configure', async () => {
-            const providerId = await vscode.window.showQuickPick(['vscode-lm', 'openai', 'anthropic', 'gemini', 'ollama'], { placeHolder: 'Select a provider' });
+        vscode.commands.registerCommand('ai-orchestra.configure', async (requestedProvider?: string) => {
+            const providerId = requestedProvider || await vscode.window.showQuickPick(['vscode-lm', 'openai', 'anthropic', 'gemini', 'ollama'], { placeHolder: 'Select a provider' });
             if (!providerId) return;
             if (providerId === 'vscode-lm') {
                 const provider = registry.getProvider(providerId) as VSCodeLanguageModelProvider;
@@ -73,6 +76,33 @@ export function registerCommands(
             registry.getProvider(providerId)?.configure({ apiKey });
             sidebarProvider.updateProviderStatus(providerId, 'Available');
             vscode.window.showInformationMessage(`${providerId} API key saved in VS Code SecretStorage.`);
+        }),
+        vscode.commands.registerCommand('ai-orchestra.manageModelPermissions', async () => {
+            const selectedMode = await vscode.window.showQuickPick([
+                { label: 'Open', description: 'Every agent role may use every configured model', value: 'open' as PermissionMode },
+                { label: 'Restricted', description: 'Deny model access unless explicitly assigned to the role', value: 'restricted' as PermissionMode },
+            ], { placeHolder: `Model permission mode (current: ${modelPermissions.getMode()})` });
+            if (!selectedMode) return;
+            await modelPermissions.setMode(selectedMode.value);
+            sidebarProvider.updatePermissionMode(selectedMode.value);
+            if (selectedMode.value === 'open') {
+                vscode.window.showInformationMessage('Model permissions set to Open.');
+                return;
+            }
+            const selectedRole = await vscode.window.showQuickPick(
+                ['supervisor', 'planner', 'coder', 'auditor', 'reviewer', 'tester'] as AgentRole[],
+                { placeHolder: 'Select an agent role to configure' },
+            );
+            if (!selectedRole) return;
+            const role = selectedRole as AgentRole;
+            const current = new Set(modelPermissions.getAssignments(role));
+            const chosen = await vscode.window.showQuickPick(
+                modelPermissions.listModels().map(model => ({ ...model, picked: current.has(model.key) })),
+                { canPickMany: true, placeHolder: `${role}: select allowed models (none means deny all)` },
+            );
+            if (!chosen) return;
+            await modelPermissions.setAssignments(role, chosen.map(item => item.key));
+            vscode.window.showInformationMessage(`${role}: ${chosen.length} model permission(s) saved for this workspace.`);
         }),
         vscode.commands.registerCommand('ai-orchestra.showUsage', () => vscode.commands.executeCommand('ai-orchestra.usage.focus')),
         vscode.commands.registerCommand('ai-orchestra.switchModel', async () => {

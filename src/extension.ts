@@ -18,6 +18,7 @@ import { ToolRuntime } from './tools/tool-runtime';
 import { CredentialBroker } from './security/credential-broker';
 import { GoogleOAuthManager } from './security/google-oauth';
 import { GeminiProvider } from './providers/gemini-provider';
+import { ModelPermissionManager } from './security/model-permissions';
 
 export function activate(context: vscode.ExtensionContext): void {
     const outputChannel = vscode.window.createOutputChannel('AI Orchestra');
@@ -39,7 +40,8 @@ export function activate(context: vscode.ExtensionContext): void {
     // 3. Initialize orchestrator system
     const taskAnalyzer = new TaskAnalyzer();
     const modelRouter = new ModelRouter(registry, budgetManager);
-    const credentialBroker = new CredentialBroker(registry);
+    const modelPermissions = new ModelPermissionManager(context.workspaceState, registry);
+    const credentialBroker = new CredentialBroker(registry, modelPermissions);
     const orchestrator = new Orchestrator(budgetManager, taskAnalyzer, modelRouter, credentialBroker);
     context.subscriptions.push(orchestrator);
     const taskStore = new TaskStore(context.globalState);
@@ -57,6 +59,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // Sidebar
     const sidebarProvider = new SidebarProvider();
+    sidebarProvider.updatePermissionMode(modelPermissions.getMode());
     const updateSidebarUsage = (): void => sidebarProvider.updateUsage(
         usageTracker.getSessionSummary(), usageTracker.getDailySummary(), budgetManager.getBudgetStatus()
     );
@@ -112,7 +115,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // 5. Register commands
     const cmds = registerCommands(
         context, registry, budgetManager,
-        chatPanelProvider, sidebarProvider, statusBarManager, googleOAuth
+        chatPanelProvider, sidebarProvider, statusBarManager, googleOAuth, modelPermissions
     );
     context.subscriptions.push(...cmds);
     context.subscriptions.push(supervisor.onEvent(event => {

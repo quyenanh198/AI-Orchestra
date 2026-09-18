@@ -85,7 +85,6 @@ export class Orchestrator implements vscode.Disposable {
       const failures: string[] = [];
       let reservationId: string | undefined;
       while (!response) {
-        const provider = this.credentialBroker.getProviderForInvocation(options?.agentId || 'supervisor', routingDecision.provider);
         const reservation = this.budgetManager.reserveRequest(
           routingDecision.model,
           taskAnalysis.estimatedInputTokens,
@@ -95,6 +94,7 @@ export class Orchestrator implements vscode.Disposable {
         if (!reservation.allowed || !reservation.id) throw new Error(`Budget reservation failed: ${reservation.reason || 'unknown reason'}`);
         reservationId = reservation.id;
         try {
+          const provider = this.credentialBroker.getProviderForInvocation(options?.agentId || 'supervisor', routingDecision.provider, routingDecision.model);
           response = await provider.chat(messages, {
             model: routingDecision.model,
             signal: options?.signal,
@@ -177,7 +177,7 @@ export class Orchestrator implements vscode.Disposable {
       if (!reservation.allowed || !reservation.id) throw new Error(`Budget reservation failed: ${reservation.reason || 'unknown reason'}`);
       reservationId = reservation.id;
 
-      const provider = this.credentialBroker.getProviderForInvocation(options?.agentId || 'supervisor', routingDecision.provider);
+      const provider = this.credentialBroker.getProviderForInvocation(options?.agentId || 'supervisor', routingDecision.provider, routingDecision.model);
 
       let fullContent = '';
       const stream = provider.stream(messages, {

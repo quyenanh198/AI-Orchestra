@@ -54,3 +54,13 @@ test('account login keeps refresh credentials in SecretStorage', async () => {
   assert.match(vscodeProvider, /authentication\.getSession\('github'/);
   assert.match(vscodeProvider, /lm\.selectChatModels/);
 });
+
+test('restricted mode enforces per-role model assignments at invocation time', async () => {
+  const permissions = await read('src/security/model-permissions.ts');
+  const broker = await read('src/security/credential-broker.ts');
+  assert.match(permissions, /mode === 'open'/);
+  assert.match(permissions, /assignments\[role\]/);
+  assert.match(permissions, /providerId.*modelId/);
+  assert.match(broker, /permissions\.isAllowed/);
+  assert.match(broker, /Model permission denied/);
+});
