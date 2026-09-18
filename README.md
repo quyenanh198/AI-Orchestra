@@ -169,6 +169,16 @@ Click **Model Permissions** in the AI Orchestra sidebar, or run **AI Orchestra: 
 
 Assignments are stored per VS Code workspace. Enforcement happens before provider invocation, not only in the UI. A denied provider/model is skipped through the normal fallback path; if no permitted model is available, the task fails with an explicit permission error.
 
+### Recommended extensions
+
+Click **Recommended Extensions** in the AI Orchestra sidebar, or run **AI Orchestra: Install Recommended Extensions**. Select one or more integrations and confirm installation:
+
+- **GitHub Copilot** — recommended by default because it directly supplies account-backed VS Code language models to AI Orchestra.
+- **Microsoft Foundry Toolkit** — model discovery, evaluation and hosted/local agent tooling.
+- **Continue** — open-source AI coding agent and model client.
+
+Nothing is installed automatically. The development workspace also declares the same entries in `.vscode/extensions.json`, so VS Code can show its standard workspace recommendation prompt.
+
 Raw credentials are loaded only by the extension host into provider adapters. Supervisor
 and worker agents never receive their values. Removing a key/token clears `SecretStorage`
 and the configured in-memory provider client.
