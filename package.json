@@ -1,0 +1,178 @@
+{
+  "name": "ai-orchestra",
+  "displayName": "AI Orchestra",
+  "description": "Multi-model AI orchestrator with smart budget management",
+  "version": "0.1.0",
+  "publisher": "ai-orchestra",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "ai-orchestra.openChat",
+        "title": "AI Orchestra: Open Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "ai-orchestra.configure",
+        "title": "AI Orchestra: Configure Providers"
+      },
+      {
+        "command": "ai-orchestra.showUsage",
+        "title": "AI Orchestra: Show Usage Dashboard"
+      },
+      {
+        "command": "ai-orchestra.switchModel",
+        "title": "AI Orchestra: Switch Model"
+      },
+      {
+        "command": "ai-orchestra.resetBudget",
+        "title": "AI Orchestra: Reset Session Budget"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ai-orchestra",
+          "title": "AI Orchestra",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ai-orchestra": [
+        {
+          "type": "webview",
+          "id": "ai-orchestra.chatView",
+          "name": "Chat"
+        },
+        {
+          "id": "ai-orchestra.providers",
+          "name": "Providers"
+        },
+        {
+          "id": "ai-orchestra.usage",
+          "name": "Budget Usage"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI Orchestra",
+      "properties": {
+        "ai-orchestra.budget.maxTokensPerSession": {
+          "type": "number",
+          "default": 100000,
+          "description": "Maximum tokens allowed per session"
+        },
+        "ai-orchestra.budget.maxCostPerDay": {
+          "type": "number",
+          "default": 5.0,
+          "description": "Maximum cost per day in USD"
+        },
+        "ai-orchestra.budget.maxTokensPerTask": {
+          "type": "number",
+          "default": 32000,
+          "minimum": 1000,
+          "description": "Maximum reserved tokens for one task across all agents"
+        },
+        "ai-orchestra.budget.handoffThreshold": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0.05,
+          "maximum": 0.5,
+          "description": "Create a checkpoint and hand off when this fraction of a task token budget remains"
+        },
+        "ai-orchestra.agents.maxConcurrent": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Maximum number of worker agents running at once"
+        },
+        "ai-orchestra.agents.leaseSeconds": {
+          "type": "number",
+          "default": 90,
+          "minimum": 30,
+          "description": "Worker lease duration before a backup agent may take over"
+        },
+        "ai-orchestra.budget.warningThreshold": {
+          "type": "number",
+          "default": 0.8,
+          "description": "Warning threshold for budget (0-1)"
+        },
+        "ai-orchestra.routing.preferredProvider": {
+          "type": "string",
+          "enum": ["auto", "openai", "anthropic", "gemini", "ollama"],
+          "default": "auto",
+          "description": "Preferred AI provider"
+        },
+        "ai-orchestra.routing.fallbackOrder": {
+          "type": "array",
+          "default": ["openai", "anthropic", "gemini", "ollama"],
+          "description": "Fallback order for AI providers"
+        },
+        "ai-orchestra.routing.autoDowngrade": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically downgrade to a cheaper model if budget is low"
+        },
+        "ai-orchestra.ollama.endpoint": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama API endpoint"
+        },
+        "ai-orchestra.tools.allowWorkspaceWrite": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow worker agents with the workspace.write capability to modify workspace files"
+        },
+        "ai-orchestra.tools.allowTerminal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow worker agents with the terminal.execute capability to run allowlisted commands"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ai-orchestra.openChat",
+          "group": "ai-orchestra"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
+    "watch": "npm run compile -- --watch",
+    "lint": "eslint src --ext ts",
+    "test": "node --import tsx --test src/test/**/*.test.ts",
+    "package": "npx @vscode/vsce package"
+  },
+  "dependencies": {
+    "openai": "^4.73.0",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@google/generative-ai": "^0.21.0",
+    "axios": "^1.7.0",
+    "gpt-tokenizer": "^2.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/vscode": "^1.100.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "tsx": "^4.0.0"
+  }
+}
