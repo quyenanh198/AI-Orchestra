@@ -41,6 +41,12 @@ export class CliAgentProvider implements AIProvider {
     terminal.sendText(this.kind === 'codex' ? 'codex login' : 'claude auth login --claudeai', true);
   }
 
+  public openInstallTerminal(): void {
+    const terminal = vscode.window.createTerminal({ name: `Install ${this.name}` });
+    terminal.show();
+    terminal.sendText(this.kind === 'codex' ? 'npm install -g @openai/codex' : 'npm install -g @anthropic-ai/claude-code', true);
+  }
+
   public openLogoutTerminal(): void {
     const terminal = vscode.window.createTerminal({ name: `${this.name} Logout` });
     terminal.show();

@@ -143,6 +143,8 @@ AI Orchestra supports account login only where the provider exposes an official 
 | Provider | Authentication | Storage | Agent access |
 |---|---|---|---|
 | GitHub Copilot / VS Code models | VS Code GitHub account + model consent | Managed by VS Code; not copied to extension storage | Invocation through VS Code Language Model API |
+| OpenAI Codex | ChatGPT account through official Codex CLI | Managed by Codex CLI; never read by AI Orchestra | Read-only `codex exec` invocation |
+| Claude Code | Claude.ai account through official Claude Code CLI | Managed by Claude Code; never read by AI Orchestra | Plan-mode `claude -p` invocation |
 | OpenAI | API key | VS Code `SecretStorage` | Invocation capability; no raw key |
 | Anthropic | API key | VS Code `SecretStorage` | Invocation capability; no raw key |
 | Gemini | Google OAuth desktop flow or API key | Refresh token/client secret or API key in VS Code `SecretStorage` | Invocation capability; no raw credential |
@@ -153,12 +155,14 @@ AI Orchestra supports account login only where the provider exposes an official 
 Run **AI Orchestra: Configure Providers**:
 
 1. Select `vscode-lm` to sign in through VS Code's built-in GitHub authentication. VS Code and the model provider show their own consent dialogs. A Copilot plan/model entitlement may be required.
-2. Select `gemini` → **Sign in with Google OAuth** for Google account login. Create a Google OAuth client of type **Desktop app**, enable the Generative Language API, configure its consent screen, and provide its client ID, client secret and billing/quota project ID. The browser returns to a random loopback port; this flow is intended for a local desktop extension host.
-3. Google OAuth can be revoked with **Sign out Google OAuth**. Selecting **Save API key** switches Gemini back to API-key mode.
+2. Select `codex-cli` → **Install official CLI** if needed → **Login with account**. Complete the official `codex login` browser flow with a ChatGPT account.
+3. Select `claude-code` → **Install official CLI** if needed → **Login with account**. Complete `claude auth login --claudeai` with a Claude Pro/Max/Team/Enterprise account supported by Claude Code.
+4. Select `gemini` → **Sign in with Google OAuth** for Google account login. Create a Google OAuth client of type **Desktop app**, enable the Generative Language API, configure its consent screen, and provide its client ID, client secret and billing/quota project ID. The browser returns to a random loopback port; this flow is intended for a local desktop extension host.
+5. Google OAuth can be revoked with **Sign out Google OAuth**. Selecting **Save API key** switches Gemini back to API-key mode.
 
 The same actions are available without the Command Palette: open the AI Orchestra activity bar, expand **Providers**, and click a provider row. The row opens that provider's login/logout/configuration menu.
 
-OpenAI and Anthropic inference still require API keys because their public API documentation does not provide a general end-user OAuth grant for arbitrary third-party extensions. AI Orchestra deliberately does not import Codex CLI, Claude Code or browser session tokens.
+The direct OpenAI and Anthropic API adapters still use API keys. Account subscriptions are exposed as separate `codex-cli` and `claude-code` providers because their official OAuth credentials are scoped to those clients. AI Orchestra deliberately does not extract or reuse their browser/CLI tokens.
 
 ### Model permissions
 

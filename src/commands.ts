@@ -33,8 +33,9 @@ export function registerCommands(
             if (!providerId) return;
             if (providerId === 'codex-cli' || providerId === 'claude-code') {
                 const provider = registry.getProvider(providerId) as CliAgentProvider;
-                const action = await vscode.window.showQuickPick(['Login with account', 'Check authentication', 'Logout'], { placeHolder: `${provider.name}: account authentication` });
+                const action = await vscode.window.showQuickPick(['Login with account', 'Check authentication', 'Install official CLI', 'Logout'], { placeHolder: `${provider.name}: account authentication` });
                 if (action === 'Login with account') provider.openLoginTerminal();
+                if (action === 'Install official CLI') provider.openInstallTerminal();
                 if (action === 'Logout') provider.openLogoutTerminal();
                 if (action === 'Check authentication') {
                     const authenticated = await provider.isAvailable();
