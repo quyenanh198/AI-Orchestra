@@ -57,7 +57,7 @@ Run command: **AI Orchestra: Open Chat** or click the 🤖 icon in the activity 
 | `ai-orchestra.budget.maxCostPerDay` | `$5.00` | Max daily spend (USD) |
 | `ai-orchestra.budget.warningThreshold` | `0.8` | Warning at 80% budget |
 | `ai-orchestra.routing.preferredProvider` | `auto` | Preferred provider |
-| `ai-orchestra.routing.fallbackOrder` | `[openai, anthropic, gemini, ollama]` | Fallback priority |
+| `ai-orchestra.routing.fallbackOrder` | `[vscode-lm, codex-cli, claude-code, antigravity-cli, openai, anthropic, gemini, ollama]` | Fallback priority; credit providers are skipped in subscription-only mode |
 | `ai-orchestra.routing.autoDowngrade` | `true` | Auto-switch to cheaper models |
 | `ai-orchestra.ollama.endpoint` | `http://localhost:11434` | Ollama server URL |
 
@@ -186,6 +186,8 @@ Assignments are stored per VS Code workspace. Enforcement happens before provide
 The default is **Subscription / Free only**. AI Orchestra permits account-backed Codex, Claude Code, Google Antigravity, GitHub/VS Code models and local Ollama, while blocking direct OpenAI, Anthropic and Gemini API adapters that may consume credits.
 
 To use API credits, click **Billing Mode** and select **Credit with confirmation**. A modal confirmation is required before every individual credit-backed provider request. Approval is never cached for the goal, session, provider or model; cancelling the modal denies that request.
+
+OpenAI API, Anthropic API and Google Gemini API are hidden from the Providers sidebar, provider picker, model picker and model-permission picker while the default **Subscription / Free only** mode is active. They appear only after **Credit with confirmation** is selected, and the router skips them entirely until then.
 
 ### Recommended extensions
 
