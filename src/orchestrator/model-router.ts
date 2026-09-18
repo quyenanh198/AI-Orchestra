@@ -3,6 +3,7 @@ import { ProviderRegistry } from '../providers/provider-registry';
 import { AIProvider, ModelInfo } from '../providers/types';
 import { BudgetManager } from '../budget/budget-manager';
 import { TaskAnalysis } from './task-analyzer';
+import { BillingPolicy } from '../security/billing-policy';
 
 export interface RoutingDecision {
   provider: string;
@@ -19,7 +20,8 @@ export interface RoutingDecision {
 export class ModelRouter {
   constructor(
     private providerRegistry: ProviderRegistry,
-    private budgetManager: BudgetManager
+    private budgetManager: BudgetManager,
+    private billingPolicy: BillingPolicy,
   ) {}
 
   /**
@@ -64,6 +66,7 @@ export class ModelRouter {
     let fallbackWasUsed = false;
 
     if (preferredProvider && preferredProvider !== 'auto' && !excludedProviders.has(preferredProvider)) {
+      if (this.billingPolicy.isCreditProvider(preferredProvider) && this.billingPolicy.getMode() === 'subscriptionOnly') preferredProvider = 'auto';
       const provider = this.providerRegistry.getProvider(preferredProvider);
       if (provider && (await provider.isAvailable())) {
         const rateLimitStatus = provider.getRateLimitStatus();
@@ -78,6 +81,7 @@ export class ModelRouter {
       const config = this.getFallbackOrder();
       for (const providerId of config) {
         if (excludedProviders.has(providerId)) continue;
+        if (this.billingPolicy.isCreditProvider(providerId) && this.billingPolicy.getMode() === 'subscriptionOnly') continue;
         const provider = this.providerRegistry.getProvider(providerId);
         if (provider && (await provider.isAvailable())) {
           const rateLimitStatus = provider.getRateLimitStatus();

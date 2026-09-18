@@ -108,3 +108,13 @@ test('credit providers are blocked by default and require one-request confirmati
   assert.match(billing, /Approval applies only to this single provider request/);
   assert.doesNotMatch(billing, /approvedProviders|approvedSession|cache/);
 });
+
+test('credit providers stay hidden and unroutable until credit mode is selected', async () => {
+  const sidebar = await read('src/ui/sidebar-provider.ts');
+  const commands = await read('src/commands.ts');
+  const router = await read('src/orchestrator/model-router.ts');
+  assert.match(sidebar, /billingMode === 'creditWithConfirmation'.*OpenAI API \(Credit\)/s);
+  assert.match(commands, /visibleProviders.*creditWithConfirmation/s);
+  assert.match(commands, /getAvailableProviders.*isCreditProvider/s);
+  assert.match(router, /isCreditProvider\(providerId\).*subscriptionOnly/);
+});

@@ -41,9 +41,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // 3. Initialize orchestrator system
     const taskAnalyzer = new TaskAnalyzer();
-    const modelRouter = new ModelRouter(registry, budgetManager);
-    const modelPermissions = new ModelPermissionManager(context.workspaceState, registry);
     const billingPolicy = new BillingPolicy();
+    const modelRouter = new ModelRouter(registry, budgetManager, billingPolicy);
+    const modelPermissions = new ModelPermissionManager(context.workspaceState, registry);
     const credentialBroker = new CredentialBroker(registry, modelPermissions, billingPolicy);
     const orchestrator = new Orchestrator(budgetManager, taskAnalyzer, modelRouter, credentialBroker);
     context.subscriptions.push(orchestrator);

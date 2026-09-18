@@ -55,8 +55,14 @@ export function registerCommands(
     return [
         vscode.commands.registerCommand('ai-orchestra.openChat', () => vscode.commands.executeCommand('ai-orchestra.chatView.focus')),
         vscode.commands.registerCommand('ai-orchestra.configure', async (requestedProvider?: string) => {
-            const providerId = requestedProvider || await vscode.window.showQuickPick(['vscode-lm', 'codex-cli', 'claude-code', 'antigravity-cli', 'gemini', 'openai', 'anthropic', 'ollama'], { placeHolder: 'Select a provider' });
+            const visibleProviders = ['vscode-lm', 'codex-cli', 'claude-code', 'antigravity-cli', 'ollama'];
+            if (billingPolicy.getMode() === 'creditWithConfirmation') visibleProviders.splice(4, 0, 'openai', 'anthropic', 'gemini');
+            const providerId = requestedProvider || await vscode.window.showQuickPick(visibleProviders, { placeHolder: 'Select a provider' });
             if (!providerId) return;
+            if (billingPolicy.isCreditProvider(providerId) && billingPolicy.getMode() !== 'creditWithConfirmation') {
+                vscode.window.showWarningMessage('API-credit providers are hidden while Billing Mode is Subscription / Free only.');
+                return;
+            }
             if (['codex-cli', 'claude-code', 'antigravity-cli'].includes(providerId)) {
                 const provider = registry.getProvider(providerId) as CliAgentProvider;
                 const cliActions = ['Check CLI status', 'Login with account', 'Install official CLI', 'Logout'];
@@ -143,7 +149,9 @@ export function registerCommands(
             const role = selectedRole as AgentRole;
             const current = new Set(modelPermissions.getAssignments(role));
             const chosen = await vscode.window.showQuickPick(
-                modelPermissions.listModels().map(model => ({ ...model, picked: current.has(model.key) })),
+                modelPermissions.listModels()
+                    .filter(model => billingPolicy.getMode() === 'creditWithConfirmation' || !billingPolicy.isCreditProvider(model.key.split(':')[0]))
+                    .map(model => ({ ...model, picked: current.has(model.key) })),
                 { canPickMany: true, placeHolder: `${role}: select allowed models (none means deny all)` },
             );
             if (!chosen) return;
@@ -185,7 +193,8 @@ export function registerCommands(
         }),
         vscode.commands.registerCommand('ai-orchestra.showUsage', () => vscode.commands.executeCommand('ai-orchestra.usage.focus')),
         vscode.commands.registerCommand('ai-orchestra.switchModel', async () => {
-            const providers = await registry.getAvailableProviders();
+            const providers = (await registry.getAvailableProviders())
+                .filter(provider => billingPolicy.getMode() === 'creditWithConfirmation' || !billingPolicy.isCreditProvider(provider.id));
             const choices = providers.flatMap(provider => provider.models.map(model => ({ label: model.name, description: `${provider.name} · Available`, model: model.id })));
             if (!choices.length) { vscode.window.showWarningMessage('No authenticated or running AI provider is currently available. Login or configure a provider first.'); return; }
             const selected = await vscode.window.showQuickPick(choices, { placeHolder: 'Select an available model' });
