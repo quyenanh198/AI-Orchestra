@@ -12,6 +12,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
 
     private providerStatuses: Map<string, string> = new Map();
     private tasks: TaskRecord[] = [];
+    private agents: Array<{ id: string; label: string; limit: string; available: boolean }> = [];
     private session?: UsageSummary;
     private daily?: UsageSummary;
     private budget?: BudgetStatus;
@@ -31,6 +32,11 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
 
     updateTasks(tasks: TaskRecord[]): void {
         this.tasks = tasks;
+        this.refresh();
+    }
+
+    updateAgents(agents: Array<{ id: string; label: string; limit: string; available: boolean }>): void {
+        this.agents = agents;
         this.refresh();
     }
 
@@ -60,6 +66,9 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             const agentsRoot = new vscode.TreeItem('Agent Tasks', vscode.TreeItemCollapsibleState.Expanded);
             agentsRoot.contextValue = 'agentsRoot';
 
+            const limitsRoot = new vscode.TreeItem('Agent Limits', vscode.TreeItemCollapsibleState.Expanded);
+            limitsRoot.contextValue = 'limitsRoot';
+
             const permissions = new vscode.TreeItem('Model Permissions', vscode.TreeItemCollapsibleState.None);
             permissions.description = this.permissionMode === 'open' ? 'Open' : 'Restricted';
             permissions.iconPath = new vscode.ThemeIcon(this.permissionMode === 'open' ? 'unlock' : 'lock');
@@ -75,7 +84,7 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             billing.iconPath = new vscode.ThemeIcon(this.billingMode === 'subscriptionOnly' ? 'shield' : 'warning');
             billing.command = { command: 'ai-orchestra.manageBillingMode', title: 'Manage Billing Mode' };
 
-            return Promise.resolve([providersRoot, billing, permissions, recommendations, agentsRoot, usageRoot]);
+            return Promise.resolve([providersRoot, billing, permissions, recommendations, limitsRoot, agentsRoot, usageRoot]);
         }
 
         if (element.label === 'Providers') {
@@ -120,6 +129,16 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             budget.iconPath = new vscode.ThemeIcon('credit-card');
 
             return Promise.resolve([session, daily, budget]);
+        }
+
+        if (element.label === 'Agent Limits') {
+            if (!this.agents.length) return Promise.resolve([new vscode.TreeItem('No agent is signed in yet', vscode.TreeItemCollapsibleState.None)]);
+            return Promise.resolve(this.agents.map(agent => {
+                const item = new vscode.TreeItem(agent.label, vscode.TreeItemCollapsibleState.None);
+                item.description = agent.limit;
+                item.iconPath = new vscode.ThemeIcon(agent.available ? 'check' : 'clock');
+                return item;
+            }));
         }
 
         if (element.label === 'Agent Tasks') {

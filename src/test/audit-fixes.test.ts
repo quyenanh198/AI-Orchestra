@@ -165,7 +165,7 @@ test('tasks left running by a previous session are failed instead of silently re
   assert.equal(store.getTask('c')?.status, 'failed');
   assert.equal(store.getTask('b')?.status, 'completed');
   assert.equal(store.getGoal('g1')?.status, 'failed');
-  assert.equal(store.getExpiredLeases(Date.now() + 1e9).length, 0, 'nothing is left for recoverExpiredLeases to re-run');
+  assert.equal(store.getTasks().filter(task => ['queued', 'leased', 'running', 'handoff'].includes(task.status)).length, 0, 'nothing is left in flight to be resumed');
 });
 
 test('security-sensitive settings are machine-scoped and the extension declares workspace trust', async () => {

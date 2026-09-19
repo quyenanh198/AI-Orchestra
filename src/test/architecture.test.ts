@@ -16,15 +16,15 @@ test('budget manager reads the exact settings contributed by the manifest', asyn
   assert.match(source, /get<number>\('maxCostPerDay'/);
 });
 
-test('supervisor persists leases, checkpoints, backups, and handoff state', async () => {
-  const types = await read('src/agents/types.ts');
-  const store = await read('src/orchestrator/task-store.ts');
-  const supervisor = await read('src/orchestrator/multi-agent-supervisor.ts');
-  for (const field of ['backupAgentIds', 'leaseExpiresAt', 'heartbeatAt', 'checkpoint', 'handoffThreshold']) assert.match(types, new RegExp(field));
-  assert.match(store, /leaseTask/);
-  assert.match(store, /getExpiredLeases/);
-  assert.match(supervisor, /recoverExpiredLeases/);
-  assert.match(supervisor, /state: 'handoff'/);
+test('the supervisor delegates each prompt to a single agent and never calls a model itself', async () => {
+  const supervisor = await read('src/orchestrator/delegation-supervisor.ts');
+  const extension = await read('src/extension.ts');
+  assert.match(supervisor, /rankAgents/);
+  assert.match(supervisor, /strictProvider: true/);
+  assert.match(supervisor, /creditAllowed/);
+  assert.doesNotMatch(supervisor, /Promise\.all/, 'no parallel agents');
+  assert.match(extension, /delegation\.handle/);
+  assert.doesNotMatch(extension, /MultiAgentSupervisor|executeGoal/);
 });
 
 test('agents receive provider invocation and tool capabilities without raw API keys', async () => {
@@ -119,6 +119,7 @@ test('credit providers stay hidden and unroutable until credit mode is selected'
   const router = await read('src/orchestrator/model-router.ts');
   assert.match(sidebar, /billingMode === 'creditWithConfirmation'.*OpenAI API \(Credit\)/s);
   assert.match(commands, /visibleProviders.*creditWithConfirmation/s);
-  assert.match(commands, /getAvailableProviders.*isCreditProvider/s);
+  const supervisor = await read('src/orchestrator/delegation-supervisor.ts');
+  assert.match(supervisor, /isCredit\(provider\.id\) && !this\.deps\.creditAllowed\(\)/, 'the supervisor never lists a credit agent in subscription/free mode');
   assert.match(router, /isCreditProvider\(providerId\).*subscriptionOnly/);
 });

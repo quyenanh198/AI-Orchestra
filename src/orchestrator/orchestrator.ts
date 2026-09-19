@@ -50,12 +50,16 @@ export class Orchestrator implements vscode.Disposable {
    */
   public async execute(
     messages: Message[],
-    options?: { signal?: AbortSignal; preferredProvider?: string; maxTokens?: number; agentId?: string }
+    options?: { signal?: AbortSignal; preferredProvider?: string; maxTokens?: number; agentId?: string; strictProvider?: boolean }
   ): Promise<OrchestratorResult> {
     try {
       const taskAnalysis = this.taskAnalyzer.analyze(messages);
       const excluded = new Set<string>();
       let routingDecision = await this.modelRouter.route(taskAnalysis, options?.preferredProvider, excluded);
+      // The delegation supervisor already chose the one agent that must run this; never silently substitute another.
+      if (options?.strictProvider && options.preferredProvider && routingDecision.provider !== options.preferredProvider) {
+        throw new Error(`${options.preferredProvider} is not available right now.`);
+      }
 
       if (routingDecision.wasFallback) {
         this._onModelSwitched.fire(routingDecision);
@@ -70,6 +74,7 @@ export class Orchestrator implements vscode.Disposable {
         routingDecision.provider
       );
 
+      if (!budgetCheck.allowed && options?.strictProvider) throw new Error(`Budget exhausted. ${budgetCheck.reason}`);
       if (!budgetCheck.allowed) {
         const cheaper = await this.modelRouter.route({ ...taskAnalysis, recommendedTier: 'budget' }, 'auto', excluded);
         const altCheck = this.budgetManager.canAfford(cheaper.model, taskAnalysis.estimatedInputTokens, cheaper.provider);
@@ -103,7 +108,7 @@ export class Orchestrator implements vscode.Disposable {
         } catch (error) {
           this.budgetManager.releaseReservation(reservationId);
           reservationId = undefined;
-          if (options?.signal?.aborted) throw error;
+          if (options?.signal?.aborted || options?.strictProvider) throw error;
           failures.push(`${routingDecision.provider}: ${error instanceof Error ? error.message : String(error)}`);
           excluded.add(routingDecision.provider);
           try {

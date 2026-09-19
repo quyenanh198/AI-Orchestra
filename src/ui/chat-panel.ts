@@ -135,10 +135,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
             </head>
             <body>
                 <div class="header">
-                    <select id="modelSelect" style="background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); padding: 4px;">
-                        <option value="gpt-4o">GPT-4o</option>
+                    <select id="modelSelect" title="Executor agent" style="background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); padding: 4px;">
+                        <option value="">Auto (supervisor decides)</option>
                     </select>
-                    <button id="clearBtn">Clear</button>
+                    <span><button id="stopBtn" style="display:none">Stop</button> <button id="clearBtn" title="Forget the shared conversation context">Clear</button></span>
                 </div>
                 <div class="chat-container" id="chatContainer"></div>
                 <div class="loader" id="loader">Thinking...</div>
@@ -155,6 +155,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                     const clearBtn = document.getElementById('clearBtn');
                     const modelSelect = document.getElementById('modelSelect');
                     const loader = document.getElementById('loader');
+                    const stopBtn = document.getElementById('stopBtn');
 
                     let currentAssistantMessageDiv = null;
 
@@ -162,27 +163,30 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                         const text = messageInput.value.trim();
                         if (text) {
                             addMessage(text, 'user');
-                            vscode.postMessage({ type: 'sendMessage', text: text, model: modelSelect.value });
+                    vscode.postMessage({ type: 'sendMessage', text: text });
                             messageInput.value = '';
                             loader.style.display = 'block';
+                            stopBtn.style.display = 'inline-block';
                             currentAssistantMessageDiv = null;
                         }
                     });
 
+                    stopBtn.addEventListener('click', () => vscode.postMessage({ type: 'cancel' }));
+
                     clearBtn.addEventListener('click', () => {
-                        chatContainer.innerHTML = '';
+                        chatContainer.replaceChildren();
                         vscode.postMessage({ type: 'clearChat' });
                     });
 
                     modelSelect.addEventListener('change', () => {
-                        vscode.postMessage({ type: 'switchModel', model: modelSelect.value });
+                        vscode.postMessage({ type: 'pinAgent', agent: modelSelect.value });
                     });
 
                     window.addEventListener('message', event => {
                         const message = event.data;
                         switch (message.type) {
                             case 'appendChunk':
-                                loader.style.display = 'none';
+                                loader.style.display = 'none'; stopBtn.style.display = 'none';
                                 if (!currentAssistantMessageDiv) {
                                     currentAssistantMessageDiv = createMessageDiv('', 'assistant');
                                     chatContainer.appendChild(currentAssistantMessageDiv);
@@ -192,7 +196,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                                 chatContainer.scrollTop = chatContainer.scrollHeight;
                                 break;
                             case 'messageComplete':
-                                loader.style.display = 'none';
+                                loader.style.display = 'none'; stopBtn.style.display = 'none';
                                 if (!currentAssistantMessageDiv) {
                                     // Non-streaming: create the message div with content
                                     currentAssistantMessageDiv = createMessageDiv(message.data.content || '', 'assistant');
@@ -202,7 +206,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                                     const metaDiv = document.createElement('div');
                                     metaDiv.className = 'metadata';
                                     // textContent, never innerHTML: model ids can come from a local Ollama server.
-                                    for (const text of ['Model: ' + message.data.model, 'Tokens: ' + message.data.tokens, 'Cost: $' + message.data.cost]) {
+                                    const details = ['Agent: ' + message.data.agent, 'Why: ' + message.data.reason, 'Limit: ' + message.data.limit,
+                                        'Model: ' + message.data.model, 'Tokens: ' + message.data.tokens];
+                                    for (const text of details) {
                                         const span = document.createElement('span');
                                         span.textContent = text;
                                         metaDiv.appendChild(span);
@@ -213,23 +219,30 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                                 chatContainer.scrollTop = chatContainer.scrollHeight;
                                 break;
                             case 'error':
-                                loader.style.display = 'none';
+                                loader.style.display = 'none'; stopBtn.style.display = 'none';
                                 const errorDiv = createMessageDiv('⚠️ ' + (message.data.message || 'An error occurred'), 'assistant');
                                 errorDiv.style.borderColor = 'var(--vscode-errorForeground)';
                                 chatContainer.appendChild(errorDiv);
                                 chatContainer.scrollTop = chatContainer.scrollHeight;
                                 currentAssistantMessageDiv = null;
                                 break;
-                            case 'modelsUpdated':
-                                modelSelect.replaceChildren(...message.data.models.map(m => {
+                            case 'agentsUpdated': {
+                                const auto = document.createElement('option');
+                                auto.value = '';
+                                auto.textContent = 'Auto (supervisor decides)';
+                                modelSelect.replaceChildren(auto, ...message.data.agents.map(agent => {
                                     const option = document.createElement('option');
-                                    option.value = m;
-                                    option.textContent = m;
+                                    option.value = agent.id;
+                                    option.textContent = agent.label + ' - ' + agent.limit;
                                     return option;
                                 }));
+                                modelSelect.value = message.data.pinned || '';
                                 break;
+                            }
                         }
                     });
+
+                    vscode.postMessage({ type: 'ready' });
 
                     function addMessage(text, role) {
                         const div = createMessageDiv(text, role);

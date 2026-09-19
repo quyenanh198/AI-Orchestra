@@ -11,6 +11,8 @@ import { ModelPermissionManager, PermissionMode } from './security/model-permiss
 import { AgentRole } from './agents/types';
 import { CliAgentProvider } from './providers/cli-agent-provider';
 import { BillingMode, BillingPolicy } from './security/billing-policy';
+import { DelegationSupervisor } from './orchestrator/delegation-supervisor';
+import { agentViews } from './ui/agent-view';
 
 export function registerCommands(
     context: vscode.ExtensionContext,
@@ -22,6 +24,8 @@ export function registerCommands(
     googleOAuth: GoogleOAuthManager,
     modelPermissions: ModelPermissionManager,
     billingPolicy: BillingPolicy,
+    delegation: DelegationSupervisor,
+    refreshAgents: () => Promise<void>,
 ): vscode.Disposable[] {
     const refreshAccountProvider = async (providerId: string, notify = true): Promise<boolean> => {
         const provider = registry.getProvider(providerId) as CliAgentProvider | undefined;
@@ -192,16 +196,19 @@ export function registerCommands(
                 : 'Credit providers enabled. Every individual request will require confirmation.');
         }),
         vscode.commands.registerCommand('ai-orchestra.showUsage', () => vscode.commands.executeCommand('ai-orchestra.usage.focus')),
+        // Pins the executor agent. "Auto" lets the supervisor choose per prompt from fit and remaining limit.
         vscode.commands.registerCommand('ai-orchestra.switchModel', async () => {
-            const providers = (await registry.getAvailableProviders())
-                .filter(provider => billingPolicy.getMode() === 'creditWithConfirmation' || !billingPolicy.isCreditProvider(provider.id));
-            const choices = providers.flatMap(provider => provider.models.map(model => ({ label: model.name, description: `${provider.name} · Available`, model: model.id })));
-            if (!choices.length) { vscode.window.showWarningMessage('No authenticated or running AI provider is currently available. Login or configure a provider first.'); return; }
-            const selected = await vscode.window.showQuickPick(choices, { placeHolder: 'Select an available model' });
-            if (selected) {
-                statusBarManager.updateModel(selected.model);
-                chatPanelProvider.postMessage('modelsUpdated', { models: [selected.model] });
-            }
+            const { agents, pinned } = await agentViews(delegation);
+            const choices: Array<vscode.QuickPickItem & { id?: string }> = [
+                { label: 'Auto (supervisor decides)', description: pinned ? undefined : 'current', detail: 'Pick the best agent for each prompt', id: undefined },
+                ...agents.map(agent => ({ label: agent.label, description: agent.id === pinned ? `current · ${agent.limit}` : agent.limit, id: agent.id })),
+            ];
+            if (choices.length === 1) { vscode.window.showWarningMessage('No authenticated or running subscription/free agent is available. Login or configure a provider first.'); }
+            const selected = await vscode.window.showQuickPick(choices, { placeHolder: 'Choose which agent executes your prompts' });
+            if (!selected) return;
+            delegation.setPinned(selected.id);
+            statusBarManager.updateModel(selected.id ? selected.label : 'Auto (supervisor)');
+            await refreshAgents();
         }),
         vscode.commands.registerCommand('ai-orchestra.resetBudget', async () => {
             const confirm = await vscode.window.showWarningMessage('Reset session token usage? Daily cost usage is retained.', 'Yes', 'No');

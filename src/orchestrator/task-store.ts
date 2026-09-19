@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { GoalRecord, TaskRecord, TaskStatus, AgentCheckpoint } from '../agents/types';
+import { GoalRecord, TaskRecord, TaskStatus } from '../agents/types';
 
 interface StoreSnapshot {
   goals: GoalRecord[];
@@ -34,28 +34,6 @@ export class TaskStore {
     return [...this.tasks.values()].filter(t => !goalId || t.goalId === goalId);
   }
 
-  public async leaseTask(taskId: string, agentId: string, leaseMs: number, now = Date.now()): Promise<TaskRecord | undefined> {
-    const task = this.tasks.get(taskId);
-    if (!task || task.status === 'completed') return undefined;
-    if (task.leaseExpiresAt && task.leaseExpiresAt > now && task.primaryAgentId !== agentId) return undefined;
-    const next: TaskRecord = {
-      ...task, primaryAgentId: agentId, status: 'leased', heartbeatAt: now,
-      leaseExpiresAt: now + leaseMs, attempt: task.attempt + 1, updatedAt: now,
-    };
-    this.tasks.set(taskId, next);
-    await this.persist();
-    return next;
-  }
-
-  public async heartbeat(taskId: string, agentId: string, leaseMs: number, checkpoint?: AgentCheckpoint): Promise<boolean> {
-    const task = this.tasks.get(taskId);
-    if (!task || task.primaryAgentId !== agentId || task.status === 'completed') return false;
-    const now = Date.now();
-    this.tasks.set(taskId, { ...task, status: 'running', heartbeatAt: now, leaseExpiresAt: now + leaseMs, checkpoint: checkpoint || task.checkpoint, updatedAt: now });
-    await this.persist();
-    return true;
-  }
-
   public async updateStatus(taskId: string, status: TaskStatus, patch: Partial<TaskRecord> = {}): Promise<TaskRecord | undefined> {
     const task = this.tasks.get(taskId);
     if (!task) return undefined;
@@ -82,13 +60,19 @@ export class TaskStore {
     return count;
   }
 
-  public getExpiredLeases(now = Date.now()): TaskRecord[] {
-    return [...this.tasks.values()].filter(t => ['leased', 'running'].includes(t.status) && !!t.leaseExpiresAt && t.leaseExpiresAt <= now);
-  }
-
   public async flush(): Promise<void> { await this.writes; }
 
+  /** Keeps the newest `maxGoals` delegations; the store used to grow forever and was rewritten in full on every save. */
+  private prune(maxGoals = 50): void {
+    const goals = [...this.goals.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const goal of goals.slice(maxGoals)) {
+      this.goals.delete(goal.id);
+      for (const [id, task] of this.tasks) if (task.goalId === goal.id) this.tasks.delete(id);
+    }
+  }
+
   private persist(): Promise<void> {
+    this.prune();
     const snapshot: StoreSnapshot = { goals: [...this.goals.values()], tasks: [...this.tasks.values()] };
     // `.catch` first: one failed write must not poison every later write in the chain.
     const write = this.writes.catch(() => undefined).then(() => this.state.update(this.key, snapshot));

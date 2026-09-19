@@ -46,7 +46,7 @@ export interface TaskRecord {
   tokenBudget: number;
   reservedTokens: number;
   usedTokens: number;
-  handoffThreshold: number;
+  handoffThreshold?: number;
   leaseExpiresAt?: number;
   heartbeatAt?: number;
   attempt: number;

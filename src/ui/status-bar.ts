@@ -18,7 +18,7 @@ export class StatusBarManager implements vscode.Disposable {
         this.budgetItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
         this.disposables.push(this.budgetItem);
 
-        this.updateModel('GPT-4o');
+        this.updateModel('Auto (supervisor)');
         this.updateUsage(0, 10000);
         
         this.modelItem.show();
@@ -27,7 +27,7 @@ export class StatusBarManager implements vscode.Disposable {
 
     public updateModel(modelName: string): void {
         this.modelItem.text = `$(hubot) ${modelName}`;
-        this.modelItem.tooltip = 'Click to switch active model';
+        this.modelItem.tooltip = 'Executor agent. Click to pin an agent or return to Auto';
     }
 
     public updateUsage(used: number, limit: number): void {

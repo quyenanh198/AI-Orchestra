@@ -34,7 +34,6 @@ interface BudgetConfig {
     maxDailyTokens: number;
     maxSessionTokens: number;
     maxTaskTokens: number;
-    handoffThreshold: number;
     warningThreshold: number; // 0-1
     criticalThreshold: number; // 0-1
 }
@@ -74,7 +73,6 @@ export class BudgetManager implements vscode.Disposable {
             maxDailyTokens: config.get<number>('maxTokensPerDay', 500000),
             maxSessionTokens: config.get<number>('maxTokensPerSession', 100000),
             maxTaskTokens: config.get<number>('maxTokensPerTask', 32000),
-            handoffThreshold: config.get<number>('handoffThreshold', 0.2),
             warningThreshold: config.get<number>('warningThreshold', 0.8), // 80%
             criticalThreshold: config.get<number>('criticalThreshold', 0.95) // 95%
         };
@@ -207,8 +205,9 @@ export class BudgetManager implements vscode.Disposable {
         this.usageTracker.resetSession();
     }
 
-    public getTaskPolicy(): { maxTaskTokens: number; handoffThreshold: number } {
-        return { maxTaskTokens: this.config.maxTaskTokens, handoffThreshold: this.config.handoffThreshold };
+    /** Token ceiling for one delegated request (all tool turns of the single executor agent). */
+    public getTaskPolicy(): { maxTaskTokens: number } {
+        return { maxTaskTokens: this.config.maxTaskTokens };
     }
 
     private checkThresholds(): void {

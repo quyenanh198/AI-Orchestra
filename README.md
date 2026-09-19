@@ -54,6 +54,11 @@ Run command: **AI Orchestra: Open Chat** or click the 🤖 icon in the activity 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `ai-orchestra.budget.maxTokensPerSession` | `100,000` | Max tokens per session |
+| `ai-orchestra.budget.maxTokensPerDay` | `500,000` | Max tokens per day (separate from the session limit) |
+| `ai-orchestra.limits` | `{}` | Soft per-agent request caps the supervisor uses when choosing (machine-scoped) |
+| `ai-orchestra.context.maxTokens` | `12,000` | Upper bound on the shared context sent to the executor |
+| `ai-orchestra.context.recentTurns` | `8` | Turns kept verbatim before being folded into the digest |
+| `ai-orchestra.agents.maxToolTurns` | `4` | Model calls the executor may make per prompt while using tools |
 | `ai-orchestra.budget.maxCostPerDay` | `$5.00` | Max daily spend (USD) |
 | `ai-orchestra.budget.warningThreshold` | `0.8` | Warning at 80% budget |
 | `ai-orchestra.routing.preferredProvider` | `auto` | Preferred provider |
@@ -66,18 +71,20 @@ Run command: **AI Orchestra: Open Chat** or click the 🤖 icon in the activity 
 ## 🏗️ Architecture
 
 ```
-User goal -> Main supervisor -> durable tasks + per-task budgets
-                           +-> planner / coder / auditor (bounded concurrency)
-                           +-> checkpoint + backup on failure or low budget
-                           +-> reviewer -> verified final response
+Prompt -> Main supervisor (no model call) -> picks ONE executor agent
+            |   by task fit + remaining limit, subscription/free agents only
+            +-> shared context (digest + recent turns + workspace notes) -> executor agent
+            +-> only if that agent fails/rate-limits: the next-ranked agent
 
 Every provider call -> atomic budget reservation -> credential broker -> provider
-                    -> usage commit or reservation release + provider fallback
+                    -> usage commit or reservation release
 ```
 
 ### Key Components
-- **Multi-agent supervisor** — Owns goals, assignments, leases, checkpoints and handoffs
-- **Task store** — Persists resumable goal and task state in VS Code global state
+- **Delegation supervisor** — The main agent. Ranks the available agents and hands each prompt to exactly one; it never calls a model itself, so choosing costs no subscription quota
+- **Limit tracker** — Estimates each agent's remaining headroom from soft caps you configure (`ai-orchestra.limits`) and pauses an agent that reports a rate limit
+- **Conversation context** — The shared context window. Older turns are folded into one-line digest entries, files an agent already read/wrote are kept as notes, so the next agent does not re-read them
+- **Task store** — Records each delegation (agent, status, tokens); keeps the newest 50 in workspace state
 - **Orchestrator** — Analyzes and routes each bounded provider invocation
 - **Task Analyzer** — Classifies task complexity and type
 - **Model Router** — Selects best model considering budget & availability
@@ -104,7 +111,9 @@ src/
 │   └── usage-tracker.ts
 ├── orchestrator/       # Task routing & planning
 │   ├── orchestrator.ts
-│   ├── multi-agent-supervisor.ts
+│   ├── delegation-supervisor.ts   # picks and runs the single executor agent
+│   ├── agent-ranking.ts           # pure fit + headroom policy
+│   ├── limit-tracker.ts           # per-agent limits and rate-limit cooldowns
 │   ├── task-store.ts
 │   ├── task-analyzer.ts
 │   └── model-router.ts
@@ -217,26 +226,36 @@ Tool permissions are independent from provider authentication:
 | Capability | Assigned to | User gate |
 |---|---|---|
 | `provider.invoke` | all agents | configured provider and available budget |
-| `workspace.read` | planner, coder, auditor, reviewer | workspace scope |
-| `workspace.write` | coder | `ai-orchestra.tools.allowWorkspaceWrite=true` |
-| `terminal.execute` | coder | `ai-orchestra.tools.allowTerminal=true` plus command allowlist |
-| `task.verify` | auditor and reviewer | read-only |
-| `task.assign` | supervisor only | never delegated to workers |
+| `workspace.read` | the executor (role `coder`) | workspace scope; secrets such as `.env` are blocked |
+| `workspace.write` | the executor | `ai-orchestra.tools.allowWorkspaceWrite=true`; `.git/`, `.vscode/` and `.env*` are never writable |
+| `terminal.execute` | the executor | `ai-orchestra.tools.allowTerminal=true` plus a constrained `git`/`npm`/`node` allowlist |
+| `task.assign` | supervisor only | never delegated |
 
-## Multi-agent execution model
+## Delegation model
 
-```text
-User goal -> Main Supervisor -> durable task graph + budget reservation
-                              +-> Planner worker --+
-                              +-> Auditor worker --+-> Reviewer -> Main Supervisor
-                              +-> Backup workers --+                    |
-                                                                        +-> Final response
-```
+The **supervisor** decides *who* executes; the **executor** is whichever agent it picks. For each prompt:
 
-Each task persists its primary and backup owners, lease, heartbeat, checkpoint,
-artifacts, token budget and acceptance criteria. Runtime provider failures are routed
-to another provider. Expired leases and low remaining task budget produce a checkpoint
-that a backup worker can resume without receiving provider credentials.
+1. Candidates are the signed-in agents that the executor role may use. In the default **Subscription / Free only**
+   mode, credit providers (OpenAI/Anthropic/Gemini API keys) are not candidates at all.
+2. An agent with no headroom is skipped: its configured cap is used up, or it recently reported a rate limit.
+3. The rest are ranked by fit (an agent of the task's tier wins; a stronger agent is mildly penalised so premium
+   quota is kept for hard tasks) and remaining headroom. **Exactly one agent** receives the prompt.
+4. The executor gets the shared context, may use its tools for a few turns, and answers. If it fails or reports a
+   rate limit, it is paused and the next-ranked agent is tried. Agents never run in parallel.
+
+Pin a specific agent from the chat header or the status bar; **Auto** returns control to the supervisor.
+The chat shows which agent ran, why, and how much of its limit is left.
+
+**Limits.** Subscription CLIs do not report remaining quota, so set soft caps you know for your plans, for example
+`"ai-orchestra.limits": { "claude-code": { "requests": 40, "windowHours": 5 } }`. AI Orchestra counts the requests it
+makes; agents without an entry are treated as unlimited, and any agent that reports a rate limit is paused
+automatically.
+
+**Shared context.** Every turn is saved. The most recent turns (`ai-orchestra.context.recentTurns`) are sent
+verbatim, older ones become one-line digest entries (no model call is spent compacting them), and files an agent
+read or wrote are listed as notes. The total is capped by `ai-orchestra.context.maxTokens` and by half of the chosen
+agent's context window. **Clear** in the chat forgets it. The CLIs are stateless per call, so the context is
+re-sent in compact form rather than re-derived by the agent.
 
 ## 📄 License
 

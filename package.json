@@ -1,7 +1,7 @@
 {
   "name": "ai-orchestra",
   "displayName": "AI Orchestra",
-  "description": "Multi-model AI orchestrator with smart budget management",
+  "description": "A supervisor agent that delegates each prompt to one subscription/free AI agent, based on fit and remaining limit, with shared conversation context",
   "version": "0.3.7",
   "publisher": "ai-orchestra",
   "repository": {
@@ -118,27 +118,40 @@
           "type": "number",
           "default": 32000,
           "minimum": 1000,
-          "description": "Maximum reserved tokens for one task across all agents"
+          "description": "Maximum tokens the executor agent may use for one prompt (all of its tool turns)"
         },
-        "ai-orchestra.budget.handoffThreshold": {
+        "ai-orchestra.agents.maxToolTurns": {
           "type": "number",
-          "default": 0.2,
-          "minimum": 0.05,
-          "maximum": 0.5,
-          "description": "Create a checkpoint and hand off when this fraction of a task token budget remains"
-        },
-        "ai-orchestra.agents.maxConcurrent": {
-          "type": "number",
-          "default": 3,
+          "default": 4,
           "minimum": 1,
-          "maximum": 8,
-          "description": "Maximum number of worker agents running at once"
+          "maximum": 12,
+          "description": "Maximum model calls the executor agent may make for one prompt while using tools"
         },
-        "ai-orchestra.agents.leaseSeconds": {
+        "ai-orchestra.limits": {
+          "type": "object",
+          "default": {},
+          "scope": "machine",
+          "description": "Soft per-agent limits the supervisor uses to pick an agent, e.g. { \"claude-code\": { \"requests\": 40, \"windowHours\": 5 } }. Subscription CLIs do not report remaining quota, so this counts requests AI Orchestra made; an agent that reports a rate limit is also paused automatically. Agents without an entry are treated as unlimited.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "requests": { "type": "number", "minimum": 1 },
+              "windowHours": { "type": "number", "minimum": 0.1 }
+            }
+          }
+        },
+        "ai-orchestra.context.maxTokens": {
           "type": "number",
-          "default": 90,
-          "minimum": 30,
-          "description": "Worker lease duration before a backup agent may take over"
+          "default": 12000,
+          "minimum": 1000,
+          "description": "Upper bound on the shared context (earlier conversation digest, recent turns and workspace notes) sent to the executor agent; also capped at half of that agent's context window"
+        },
+        "ai-orchestra.context.recentTurns": {
+          "type": "number",
+          "default": 8,
+          "minimum": 2,
+          "maximum": 50,
+          "description": "Number of recent conversation turns kept verbatim; older turns are folded into a one-line-each digest"
         },
         "ai-orchestra.budget.warningThreshold": {
           "type": "number",

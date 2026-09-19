@@ -13,7 +13,10 @@ import { SidebarProvider } from './ui/sidebar-provider';
 import { Settings } from './config/settings';
 import { registerCommands } from './commands';
 import { TaskStore } from './orchestrator/task-store';
-import { MultiAgentSupervisor } from './orchestrator/multi-agent-supervisor';
+import { DelegationSupervisor } from './orchestrator/delegation-supervisor';
+import { ConversationContext } from './context/conversation-context';
+import { LimitTracker } from './orchestrator/limit-tracker';
+import { agentViews, describeLimit } from './ui/agent-view';
 import { ToolRuntime } from './tools/tool-runtime';
 import { CredentialBroker } from './security/credential-broker';
 import { GoogleOAuthManager } from './security/google-oauth';
@@ -55,10 +58,40 @@ export function activate(context: vscode.ExtensionContext): void {
     void taskStore.failInterrupted().then(count => {
         if (count) outputChannel.appendLine(`Marked ${count} task(s) from a previous session as interrupted.`);
     });
-    flushOnDeactivate.push(() => usageTracker.flush(), () => taskStore.flush());
     const toolRuntime = new ToolRuntime();
-    const supervisor = new MultiAgentSupervisor(orchestrator, taskStore, budgetManager, toolRuntime);
-    context.subscriptions.push(supervisor);
+    const settingsOf = (section: string) => vscode.workspace.getConfiguration(`ai-orchestra.${section}`);
+    // Getters, so changing a setting takes effect without reloading the window.
+    const sharedContext = new ConversationContext(context.workspaceState, {
+        get recentTurns() { return settingsOf('context').get('recentTurns', 8); },
+        digestLineChars: 160, maxDigestLines: 60, maxNotes: 40,
+        estimate: text => tokenEstimator.estimateTokens(text),
+    });
+    // Limits belong to the user's accounts, not to a folder, so they live in global state.
+    const limitTracker = new LimitTracker(context.globalState, () => vscode.workspace.getConfiguration('ai-orchestra').get('limits', {}));
+    flushOnDeactivate.push(() => usageTracker.flush(), () => taskStore.flush(), () => sharedContext.flush(), () => limitTracker.flush());
+    // Forward-declared: the sidebar and output channel are used by the event callback only after activation finishes.
+    const delegation = new DelegationSupervisor({
+        orchestrator,
+        providers: () => registry.getAllProviders(),
+        isCredit: id => billingPolicy.isCreditProvider(id),
+        creditAllowed: () => billingPolicy.getMode() === 'creditWithConfirmation',
+        isPermitted: (agentId, providerId, modelId) => modelPermissions.isAllowed(agentId, providerId, modelId),
+        fallbackOrder: () => vscode.workspace.getConfiguration('ai-orchestra.routing').get<string[]>('fallbackOrder', []),
+        limits: limitTracker,
+        context: sharedContext,
+        store: taskStore,
+        tools: toolRuntime,
+        analyze: messages => taskAnalyzer.analyze(messages),
+        settings: () => ({
+            maxToolTurns: settingsOf('agents').get('maxToolTurns', 4),
+            contextTokens: settingsOf('context').get('maxTokens', 12000),
+            maxTaskTokens: budgetManager.getTaskPolicy().maxTaskTokens,
+        }),
+        emit: event => {
+            outputChannel.appendLine(`[${event.state}] goal=${event.goalId} agent=${event.agentId || '-'} ${event.detail || ''}`);
+            sidebarProvider.updateTasks(taskStore.getTasks(event.goalId));
+        },
+    });
 
     // 4. Initialize UI
     const statusBarManager = new StatusBarManager();
@@ -82,36 +115,36 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     // Chat panel wired to orchestrator
-    let goalRunning = false;
-    const chatPanelProvider = new ChatPanelProvider(context.extensionUri, async (message) => {
+    let running: AbortController | undefined;
+    const refreshAgents = async (): Promise<void> => {
+        const view = await agentViews(delegation);
+        chatPanelProvider.postMessage('agentsUpdated', view);
+        sidebarProvider.updateAgents(view.agents);
+    };
+    const chatPanelProvider: ChatPanelProvider = new ChatPanelProvider(context.extensionUri, async (message) => {
         if (message.type === 'sendMessage') {
             // Never log prompt text: users paste secrets, and the output channel is easy to share.
             outputChannel.appendLine(`User message received (${String(message.text).length} chars).`);
-            if (goalRunning) {
-                chatPanelProvider.postMessage('error', { message: 'A goal is already running. Wait for it to finish before sending another.' });
+            if (running) {
+                chatPanelProvider.postMessage('error', { message: 'The supervisor is still working on the previous prompt. Wait for it or press Stop.' });
                 return;
             }
-            goalRunning = true;
+            running = new AbortController();
             try {
-                const result = await supervisor.executeGoal(String(message.text));
-
-                // Send content as a chunk so it displays in the chat
-                chatPanelProvider.postMessage('appendChunk', {
-                    chunk: result.response.content
-                });
-
-                // Then send completion metadata
+                const outcome = await delegation.handle(String(message.text), { signal: running.signal });
+                const { result, decision } = outcome;
+                chatPanelProvider.postMessage('appendChunk', { chunk: result.response.content });
                 chatPanelProvider.postMessage('messageComplete', {
                     content: result.response.content,
                     model: result.response.model,
-                    provider: result.response.provider,
+                    agent: decision.agentName,
+                    reason: outcome.attempts > 1 ? `${decision.reason} (after ${outcome.attempts - 1} agent(s) failed)` : decision.reason,
+                    limit: describeLimit(decision.limit),
                     tokens: result.response.usage.totalTokens,
                     cost: result.response.usage.estimatedCost.toFixed(4)
                 });
-
-                // Update UI
                 const status = budgetManager.getBudgetStatus();
-                statusBarManager.updateModel(result.response.model);
+                statusBarManager.updateModel(decision.agentName);
                 statusBarManager.updateUsage(status.tokenBudget.used, status.tokenBudget.limit);
                 statusBarManager.updateBudgetWarning(status.tokenBudget.percentage * 100);
                 statusBarManager.showCostTooltip(result.response.usage.estimatedCost);
@@ -121,11 +154,19 @@ export function activate(context: vscode.ExtensionContext): void {
                 chatPanelProvider.postMessage('error', { message: errMsg });
                 outputChannel.appendLine(`Error: ${errMsg}`);
             } finally {
-                goalRunning = false;
+                running = undefined;
+                void refreshAgents();
             }
-        } else if (message.type === 'switchModel') {
-            statusBarManager.updateModel(String(message.model));
-            outputChannel.appendLine(`Model switched to: ${message.model}`);
+        } else if (message.type === 'cancel') {
+            running?.abort();
+        } else if (message.type === 'clearChat') {
+            await sharedContext.clear();
+        } else if (message.type === 'pinAgent') {
+            delegation.setPinned(message.agent ? String(message.agent) : undefined);
+            statusBarManager.updateModel(message.agent ? String(message.agent) : 'Auto (supervisor)');
+            outputChannel.appendLine(`Executor agent ${message.agent ? `pinned to ${message.agent}` : 'set to Auto'}.`);
+        } else if (message.type === 'ready') {
+            void refreshAgents();
         }
     });
 
@@ -139,16 +180,10 @@ export function activate(context: vscode.ExtensionContext): void {
     // 5. Register commands
     const cmds = registerCommands(
         context, registry, budgetManager,
-        chatPanelProvider, sidebarProvider, statusBarManager, googleOAuth, modelPermissions, billingPolicy
+        chatPanelProvider, sidebarProvider, statusBarManager, googleOAuth, modelPermissions, billingPolicy, delegation, refreshAgents
     );
     context.subscriptions.push(...cmds);
-    context.subscriptions.push(supervisor.onEvent(event => {
-        outputChannel.appendLine(`[${event.state}] goal=${event.goalId} task=${event.taskId || '-'} agent=${event.agentId || '-'} ${event.detail || ''}`);
-        sidebarProvider.updateTasks(supervisor.getTasks(event.goalId));
-    }));
     context.subscriptions.push(usageTracker.onUsageUpdated(() => updateSidebarUsage()));
-    const recoveryTimer = setInterval(() => void supervisor.recoverExpiredLeases(), 15_000);
-    context.subscriptions.push({ dispose: () => clearInterval(recoveryTimer) });
 
     // 6. Wire up budget events
     context.subscriptions.push(
@@ -183,7 +218,8 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     // 8. Load API keys
-    void loadProviderKeys(context.secrets, context.globalState, registry, sidebarProvider, outputChannel, googleOAuth);
+    void loadProviderKeys(context.secrets, context.globalState, registry, sidebarProvider, outputChannel, googleOAuth)
+        .then(() => refreshAgents());
 
     outputChannel.appendLine('AI Orchestra extension activated successfully.');
 }

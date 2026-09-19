@@ -40,11 +40,22 @@ export class CliAgentProvider implements AIProvider {
         ] : [{ id: 'grok-build', name: 'Grok Build (account default)', provider: this.id, maxContextTokens: 500_000, inputPricePerMToken: 0, outputPricePerMToken: 0, tier: 'premium' }];
   }
 
+  private statusCache?: { at: number; status: CliStatus };
+
+  /** Routing asks every provider on every prompt; spawning 1-3 processes each time is too slow, so reuse a recent probe. */
   public async isAvailable(): Promise<boolean> {
+    const cached = this.statusCache;
+    if (cached && Date.now() - cached.at < 30_000) return cached.status.authenticated;
     return (await this.checkStatus()).authenticated;
   }
 
   public async checkStatus(): Promise<CliStatus> {
+    const status = await this.probeStatus();
+    this.statusCache = { at: Date.now(), status };
+    return status;
+  }
+
+  private async probeStatus(): Promise<CliStatus> {
     try {
       const command = await this.resolveCommand(false);
       const versionResult = await execFileAsync(command.executable, [...command.prefix, ...(this.kind === 'grok' ? ['version'] : ['--version'])], { timeout: 10_000, windowsHide: true });

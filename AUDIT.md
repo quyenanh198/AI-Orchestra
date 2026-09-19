@@ -89,14 +89,38 @@ Scope: every file under `src/` (~4,000 lines), the manifest, and the Grok CLI in
 - `execute` no longer accepts `npx`, `node -e`, or arbitrary `git`/`npm` subcommands.
 - Codex logged in with an API key is now reported "not authenticated" (with an explanation) rather than available.
 
+### Redesign after the audit: single-executor delegation
+
+The audit's open items #2 and #4 below were resolved by changing the product model to what the extension is for: a main
+supervisor that assigns each prompt to **one** subscription/free agent (see README, "Delegation model").
+
+- `MultiAgentSupervisor` (planner + coder + auditor + reviewer + supervisor = 5+ model calls per message, leases,
+  heartbeats, backup handoff) and the unused `TaskPlanner` are removed. `DelegationSupervisor` never calls a model; it
+  ranks candidates (`agent-ranking.ts`), runs the winner through `Orchestrator` with `strictProvider` (no silent
+  substitution) and only tries the next agent if the first fails. Cancellation never falls through to another agent.
+- Remaining-limit awareness: `LimitTracker` (soft caps per agent from `ai-orchestra.limits`, plus a cooldown parsed from
+  the agent's own rate-limit message, persisted in global state). Subscription CLIs expose no quota API, so the caps are
+  user-configured estimates, not readings.
+- Shared context window: `ConversationContext` (workspace state) keeps recent turns, a deterministic digest of older
+  ones and notes about files already read/written; it is packed within a token budget and re-sent in compact form. The
+  chat had no history before; "Clear" now forgets it.
+- Credit providers are not candidates at all in Subscription/free mode (the default), not merely blocked at call time.
+- The header dropdown and "Switch Model" now pin a real executor (or return to Auto); the status bar no longer shows
+  "GPT-4o" by default. `CliAgentProvider.isAvailable()` reuses a 30 s status probe instead of spawning processes on every
+  routing decision. `TaskStore` keeps only the newest 50 delegations.
+- Behaviour change: settings `agents.maxConcurrent`, `agents.leaseSeconds` and `budget.handoffThreshold` are removed;
+  `budget.maxTokensPerTask` now caps one prompt's tool turns.
+- The executor runs under the `coder` role, so Restricted-mode model permissions for that role decide which agents it
+  may use. Selection is deterministic rules, not an LLM; an LLM-assisted choice for ambiguous prompts would spend quota.
+
 ### Open findings (not fixed; ordered by priority)
 1. **Windows `.cmd` shims cannot be spawned (verified on Node 22.23 and 24.19: `spawn EINVAL`).** `resolveCommand` prefers `.cmd`/`.bat` and falls back to `npx.cmd`/`npm.cmd`; since the CVE-2024-27980 fix Node refuses those without a shell. npm-installed `codex`/`claude`/`grok` on Windows are `.cmd` only. Not changed blind because a shell fallback with the prompt in argv is command injection: the safe design is prompt over stdin plus `cmd.exe /d /s /c` with validated static args, or resolving the shim to its script. Needs a test on real Windows VS Code before choosing.
-2. Every chat message runs a full goal (3 parallel workers + reviewer + supervisor = 5+ model calls) with no history and no cancel. The model dropdown/"Switch Model" only change display text, and the header defaults to "GPT-4o" even in Subscription mode (already on the roadmap above).
+2. ~~Every chat message runs a full multi-agent goal, with no history, no cancel and a decorative model selector.~~ Resolved by the delegation redesign above.
 3. No per-call user confirmation for agent writes/execution, and tool output is fed back to the model unfenced (prompt-injection path). Settings-only opt-in remains the sole gate.
-4. `ModelRouter` calls `isAvailable()` on every route and every fallback; for CLI providers that spawns 1-3 processes (Grok makes a network call). Cache status for a short TTL.
-5. `TaskStore` rewrites the entire task history on every heartbeat and never prunes; `UsageTracker` stores `daily` and `monthly` copies and, in `globalState`, is last-write-wins across windows.
+4. ~~`isAvailable()` spawned 1-3 processes per provider per routing decision.~~ CLI providers now reuse a 30 s status probe.
+5. `UsageTracker` stores `daily` and `monthly` copies and, in `globalState`, is last-write-wins across windows; the same applies to `LimitTracker` (global state, so counts from two open windows can overwrite each other). `TaskStore` is now pruned to 50 delegations.
 6. Google OAuth loopback: first request to the port wins (any local request can consume the one-shot listener), the server is not closed if `openExternal` throws, and a state mismatch answers "login complete" with HTTP 400.
 7. Antigravity "Logout" only launches `agy`; "Login" reinstalls the CLI on every click; the `npx --yes <pkg>` fallback downloads an unpinned package during a chat request.
 8. On Windows the `execute` tool cannot run `npm` (needs `.cmd`, same cause as #1).
 9. Both sidebar views register the same provider, so each shows the whole tree; `TaskAnalyzer` uses substring keyword matching ("hi" matches "this") on tool-result-heavy context, which biases most agent calls to higher tiers.
-10. Hygiene: 19 `no-explicit-any` warnings; dead code (`TaskPlanner`, `Settings.getConfig`/`getProviderConfig`, `BudgetManager.getRecommendedModel`, `executeStream`); `getCheaperAlternative` can suggest an OpenAI model in Subscription mode; Anthropic display names are wrong ("Claude 3.5 Sonnet" for `claude-sonnet-4-...`); the original architecture tests are source-regex checks and should be replaced by behavioural ones like the new file.
+10. Hygiene: 19 `no-explicit-any` warnings; dead code (`Settings.getConfig`/`getProviderConfig`, `BudgetManager.getRecommendedModel`, `Orchestrator.executeStream`); `getCheaperAlternative` can suggest an OpenAI model in Subscription mode; Anthropic display names are wrong ("Claude 3.5 Sonnet" for `claude-sonnet-4-...`); the original architecture tests are source-regex checks and should be replaced by behavioural ones like the new file.
