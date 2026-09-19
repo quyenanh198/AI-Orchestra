@@ -4,6 +4,7 @@ import { BudgetStatus } from '../budget/budget-manager';
 import { UsageSummary } from '../budget/usage-tracker';
 import { PermissionMode } from '../security/model-permissions';
 import { BillingMode } from '../security/billing-policy';
+import { iconForStatus } from './status-icon';
 
 export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
@@ -135,10 +136,6 @@ export class SidebarProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     }
 
     private getIconForStatus(status: string): string {
-        if (/Available|Authenticated|Signed in/i.test(status)) { return 'check'; }
-        if (status === 'Not Configured' || status === 'Not configured') { return 'x'; }
-        if (status === 'Rate limited') { return 'warning'; }
-        if (status === 'Not Running') { return 'debug-disconnect'; }
-        return 'circle-outline';
+        return iconForStatus(status);
     }
 }

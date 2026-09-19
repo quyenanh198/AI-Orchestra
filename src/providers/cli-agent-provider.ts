@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { AIProvider, ChatChunk, ChatOptions, ChatResponse, Message, ModelInfo, ProviderConfig, RateLimitStatus } from './types';
+import { classifyCodex, classifySessionProbe, describeCliFailure, parseCliJson } from './cli-status';
 
 const execFileAsync = promisify(execFile);
 
@@ -51,16 +52,16 @@ export class CliAgentProvider implements AIProvider {
       try {
         if (this.kind === 'codex') {
           const { stdout, stderr } = await execFileAsync(command.executable, [...command.prefix, 'login', 'status'], { timeout: 10_000, windowsHide: true });
-          const authOutput = `${stdout}\n${stderr}`;
-          return { installed: true, authenticated: /logged in|chatgpt|api key/i.test(authOutput), version, accountType: /chatgpt/i.test(authOutput) ? 'ChatGPT' : undefined, executable: command.executable };
+          const verdict = classifyCodex(`${stdout}\n${stderr}`);
+          return { installed: true, version, executable: command.executable, ...verdict };
         }
         if (this.kind === 'antigravity') {
           const { stdout } = await execFileAsync(command.executable, ['-p', '/usage', '--output-format', 'json', '--print-timeout', '10s'], { timeout: 15_000, windowsHide: true });
-          return { installed: true, authenticated: !/authentication required/i.test(stdout), version, accountType: 'Google', executable: command.executable };
+          return { installed: true, version, executable: command.executable, ...classifySessionProbe(stdout, 'Google', this.name) };
         }
         if (this.kind === 'grok') {
-          await execFileAsync(command.executable, [...command.prefix, 'models'], { timeout: 15_000, windowsHide: true });
-          return { installed: true, authenticated: true, version, accountType: 'xAI account', executable: command.executable };
+          const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'models'], { timeout: 15_000, windowsHide: true });
+          return { installed: true, version, executable: command.executable, ...classifySessionProbe(stdout, 'xAI account', this.name) };
         }
         const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'auth', 'status', '--json'], { timeout: 10_000, windowsHide: true });
         const auth = JSON.parse(stdout) as { loggedIn?: boolean; authMethod?: string; subscriptionType?: string };
@@ -127,8 +128,7 @@ export class CliAgentProvider implements AIProvider {
     const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only'];
     if (options.model && options.model !== 'codex-default') args.push('--model', options.model);
     args.push(prompt);
-    const command = await this.resolveCommand(true);
-    const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
+    const stdout = await this.exec(args, cwd, options.signal);
     let content = '';
     let inputTokens = 0; let outputTokens = 0;
     for (const line of stdout.split(/\r?\n/)) {
@@ -145,9 +145,8 @@ export class CliAgentProvider implements AIProvider {
   private async runClaude(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
     const args = ['-p', prompt, '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1'];
     if (options.model) args.push('--model', options.model);
-    const command = await this.resolveCommand(true);
-    const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
-    const data = JSON.parse(stdout) as { result?: string; usage?: { input_tokens?: number; output_tokens?: number }; subtype?: string };
+    const stdout = await this.exec(args, cwd, options.signal);
+    const data = parseCliJson<{ result?: string; usage?: { input_tokens?: number; output_tokens?: number }; subtype?: string }>(this.name, stdout);
     if (!data.result) throw new Error(`Claude Code returned no result (${data.subtype || 'unknown'}).`);
     const inputTokens = data.usage?.input_tokens || 0; const outputTokens = data.usage?.output_tokens || 0;
     return { content: data.result, model: options.model || 'sonnet', provider: this.id, finishReason: 'stop', usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, estimatedCost: 0 } };
@@ -156,10 +155,8 @@ export class CliAgentProvider implements AIProvider {
   private async runAntigravity(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
     const args = ['-p', prompt, '--output-format', 'json', '--sandbox'];
     if (options.model) args.push('--model', options.model);
-    const command = await this.resolveCommand(true);
-    const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
-    const start = stdout.indexOf('{');
-    const data = JSON.parse(start >= 0 ? stdout.slice(start) : stdout) as { response?: string; error?: string; usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number } };
+    const stdout = await this.exec(args, cwd, options.signal);
+    const data = parseCliJson<{ response?: string; error?: string; usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number } }>(this.name, stdout);
     if (!data.response) throw new Error(data.error || 'Antigravity returned no response. Complete Google login in an interactive terminal first.');
     const inputTokens = data.usage?.input_tokens || 0; const outputTokens = data.usage?.output_tokens || 0;
     return { content: data.response, model: options.model || 'antigravity-default', provider: this.id, finishReason: 'stop', usage: { inputTokens, outputTokens, totalTokens: data.usage?.total_tokens || inputTokens + outputTokens, estimatedCost: 0 } };
@@ -168,13 +165,22 @@ export class CliAgentProvider implements AIProvider {
   private async runGrok(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
     const args = ['--no-auto-update', '-p', prompt, '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1'];
     if (options.model && options.model !== 'grok-build') args.push('--model', options.model);
-    const command = await this.resolveCommand(true);
-    const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal: options.signal });
-    const start = stdout.indexOf('{');
-    const data = JSON.parse(start >= 0 ? stdout.slice(start) : stdout) as { text?: string; usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number } };
+    const stdout = await this.exec(args, cwd, options.signal);
+    const data = parseCliJson<{ text?: string; usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number } }>(this.name, stdout);
     if (!data.text) throw new Error('Grok Build returned no response. Run grok login first.');
     const inputTokens = data.usage?.input_tokens || 0; const outputTokens = data.usage?.output_tokens || 0;
     return { content: data.text, model: options.model || 'grok-build', provider: this.id, finishReason: 'stop', usage: { inputTokens, outputTokens, totalTokens: data.usage?.total_tokens || inputTokens + outputTokens, estimatedCost: 0 } };
+  }
+
+  /** Runs the resolved CLI and rethrows failures without the argv (which would contain the whole prompt). */
+  private async exec(args: string[], cwd: string, signal?: AbortSignal): Promise<string> {
+    const command = await this.resolveCommand(true);
+    try {
+      const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal });
+      return stdout;
+    } catch (error) {
+      throw new Error(describeCliFailure(this.name, error));
+    }
   }
 
   private async resolveCommand(allowNpx: boolean): Promise<CliCommand> {

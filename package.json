@@ -19,6 +19,13 @@
     "AI",
     "Chat"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "AI Orchestra runs local CLIs and can let agents read, write and execute in the workspace, so it is disabled until you trust the folder."
+    },
+    "virtualWorkspaces": false
+  },
   "contributes": {
     "commands": [
       {
@@ -89,6 +96,19 @@
           "default": 100000,
           "description": "Maximum tokens allowed per session"
         },
+        "ai-orchestra.budget.maxTokensPerDay": {
+          "type": "number",
+          "default": 500000,
+          "minimum": 1000,
+          "description": "Maximum tokens allowed per day (kept separate from the per-session limit)"
+        },
+        "ai-orchestra.budget.criticalThreshold": {
+          "type": "number",
+          "default": 0.95,
+          "minimum": 0.1,
+          "maximum": 1,
+          "description": "Fraction of the daily budget at which AI Orchestra downgrades to budget models"
+        },
         "ai-orchestra.budget.maxCostPerDay": {
           "type": "number",
           "default": 5,
@@ -132,6 +152,7 @@
             "creditWithConfirmation"
           ],
           "default": "subscriptionOnly",
+          "scope": "machine",
           "enumDescriptions": [
             "Use only subscription-backed, free, or local providers",
             "Allow credit providers but require confirmation before every request"
@@ -178,16 +199,19 @@
         "ai-orchestra.ollama.endpoint": {
           "type": "string",
           "default": "http://localhost:11434",
-          "description": "Ollama API endpoint"
+          "scope": "machine",
+          "description": "Ollama API endpoint. Machine-scoped: a workspace cannot redirect your prompts to another host."
         },
         "ai-orchestra.tools.allowWorkspaceWrite": {
           "type": "boolean",
           "default": false,
+          "scope": "machine",
           "description": "Allow worker agents with the workspace.write capability to modify workspace files"
         },
         "ai-orchestra.tools.allowTerminal": {
           "type": "boolean",
           "default": false,
+          "scope": "machine",
           "description": "Allow worker agents with the terminal.execute capability to run allowlisted commands"
         }
       }

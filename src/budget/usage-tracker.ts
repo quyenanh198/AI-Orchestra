@@ -129,9 +129,11 @@ export class UsageTracker {
     private enqueuePersist(): void {
         const daily = [...this.dailyRecords];
         const monthly = [...this.monthlyRecords];
-        this.persistQueue = this.persistQueue.then(async () => {
+        // `.catch` first: a failed write must not permanently stop all later usage from being saved.
+        this.persistQueue = this.persistQueue.catch(() => undefined).then(async () => {
             await this.memento.update(this.dailyKey, daily);
             await this.memento.update(this.monthlyKey, monthly);
         });
+        this.persistQueue.catch(() => undefined);
     }
 }

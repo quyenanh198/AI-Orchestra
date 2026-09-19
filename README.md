@@ -59,7 +59,9 @@ Run command: **AI Orchestra: Open Chat** or click the 🤖 icon in the activity 
 | `ai-orchestra.routing.preferredProvider` | `auto` | Preferred provider |
 | `ai-orchestra.routing.fallbackOrder` | `[vscode-lm, codex-cli, claude-code, antigravity-cli, grok-cli, openai, anthropic, gemini, ollama]` | Fallback priority; credit providers are skipped in subscription-only mode |
 | `ai-orchestra.routing.autoDowngrade` | `true` | Auto-switch to cheaper models |
-| `ai-orchestra.ollama.endpoint` | `http://localhost:11434` | Ollama server URL |
+| `ai-orchestra.ollama.endpoint` | `http://localhost:11434` | Ollama server URL (machine-scoped: set it in User settings; a workspace cannot override it) |
+
+`billing.mode`, `tools.allowTerminal`, `tools.allowWorkspaceWrite` and `ollama.endpoint` are **machine-scoped**, so a repository's `.vscode/settings.json` cannot flip them. The extension is disabled in untrusted (Restricted Mode) workspaces.
 
 ## 🏗️ Architecture
 

@@ -21,6 +21,8 @@ export class ModelPermissionManager {
   public isAllowed(agentId: string, providerId: string, modelId: string): boolean {
     if (this.state.mode === 'open') return true;
     const role = this.roleForAgent(agentId);
+    // An unrecognised agent id must not inherit the supervisor's grants.
+    if (!role) return false;
     const allowed = this.state.assignments[role] || [];
     return allowed.includes(`${providerId}:${modelId}`) || allowed.includes(`${providerId}:*`);
   }
@@ -41,9 +43,9 @@ export class ModelPermissionManager {
     })));
   }
 
-  private roleForAgent(agentId: string): AgentRole {
+  private roleForAgent(agentId: string): AgentRole | undefined {
     if (agentId === 'supervisor') return 'supervisor';
     const role = agentId.split('-')[0] as AgentRole;
-    return ['planner', 'coder', 'reviewer', 'auditor', 'tester'].includes(role) ? role : 'supervisor';
+    return ['planner', 'coder', 'reviewer', 'auditor', 'tester'].includes(role) ? role : undefined;
   }
 }

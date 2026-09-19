@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { randomBytes } from 'node:crypto';
 
 export class ChatPanelProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'ai-orchestra.chatView';
@@ -26,11 +27,15 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
         webviewView.webview.onDidReceiveMessage(data => {
             this._onMessage(data);
         });
+        webviewView.onDidDispose(() => {
+            if (this._view === webviewView) this._view = undefined;
+        });
     }
 
     public postMessage(type: string, data: any) {
         if (this._view) {
-            this._view.webview.postMessage({ type, data });
+            // A disposed webview rejects; a late goal result must not turn into an unhandled rejection.
+            void Promise.resolve(this._view.webview.postMessage({ type, data })).catch(() => undefined);
         }
     }
 
@@ -196,7 +201,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                                 if (currentAssistantMessageDiv) {
                                     const metaDiv = document.createElement('div');
                                     metaDiv.className = 'metadata';
-                                    metaDiv.innerHTML = \`<span>Model: \${message.data.model}</span><span>Tokens: \${message.data.tokens}</span><span>Cost: $\${message.data.cost}</span>\`;
+                                    // textContent, never innerHTML: model ids can come from a local Ollama server.
+                                    for (const text of ['Model: ' + message.data.model, 'Tokens: ' + message.data.tokens, 'Cost: $' + message.data.cost]) {
+                                        const span = document.createElement('span');
+                                        span.textContent = text;
+                                        metaDiv.appendChild(span);
+                                    }
                                     currentAssistantMessageDiv.appendChild(metaDiv);
                                 }
                                 currentAssistantMessageDiv = null;
@@ -211,7 +221,12 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
                                 currentAssistantMessageDiv = null;
                                 break;
                             case 'modelsUpdated':
-                                modelSelect.innerHTML = message.data.models.map(m => \`<option value="\${m}">\${m}</option>\`).join('');
+                                modelSelect.replaceChildren(...message.data.models.map(m => {
+                                    const option = document.createElement('option');
+                                    option.value = m;
+                                    option.textContent = m;
+                                    return option;
+                                }));
                                 break;
                         }
                     });
@@ -238,10 +253,5 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 }
 
 function getNonce() {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
+    return randomBytes(24).toString('base64url');
 }

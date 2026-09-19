@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AIProvider, ProviderConfig, ChatOptions, Message, ChatResponse, ChatChunk, ModelInfo, RateLimitStatus, TokenUsage, ProviderEvents } from './types';
+import { toGeminiPayload } from './gemini-format';
 
 export interface GeminiOAuthCredentials { getRequestHeaders(): Promise<Record<string, string>>; }
 
@@ -80,24 +81,16 @@ export class GeminiProvider implements AIProvider {
     if (!this.client) throw new Error('Gemini client not configured');
 
     const modelId = options?.model || this.models[0].id;
+    const payload = toGeminiPayload(messages);
     const model = this.client.getGenerativeModel({
       model: modelId,
       generationConfig: { maxOutputTokens: options?.maxTokens },
-        systemInstruction: options?.systemPrompt
+      systemInstruction: [options?.systemPrompt, payload.system].filter(Boolean).join('\n\n') || undefined,
     });
 
-    const geminiMessages = messages.map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-    }));
-
     try {
-      const chat = model.startChat({
-          history: geminiMessages.slice(0, -1),
-      });
-
-      const lastMessage = geminiMessages[geminiMessages.length - 1].parts[0].text;
-      const result = await chat.sendMessage(lastMessage);
+      const chat = model.startChat({ history: payload.history });
+      const result = await chat.sendMessage(payload.last);
       const response = result.response;
 
       const usageMetadata = response.usageMetadata;
@@ -138,24 +131,16 @@ export class GeminiProvider implements AIProvider {
     if (!this.client) throw new Error('Gemini client not configured');
 
     const modelId = options?.model || this.models[0].id;
+    const payload = toGeminiPayload(messages);
     const model = this.client.getGenerativeModel({
       model: modelId,
       generationConfig: { maxOutputTokens: options?.maxTokens },
-        systemInstruction: options?.systemPrompt
+      systemInstruction: [options?.systemPrompt, payload.system].filter(Boolean).join('\n\n') || undefined,
     });
 
-    const geminiMessages = messages.map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-    }));
-
     try {
-      const chat = model.startChat({
-          history: geminiMessages.slice(0, -1),
-      });
-
-      const lastMessage = geminiMessages[geminiMessages.length - 1].parts[0].text;
-      const result = await chat.sendMessageStream(lastMessage);
+      const chat = model.startChat({ history: payload.history });
+      const result = await chat.sendMessageStream(payload.last);
 
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();

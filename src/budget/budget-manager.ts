@@ -70,7 +70,8 @@ export class BudgetManager implements vscode.Disposable {
         const config = vscode.workspace.getConfiguration('ai-orchestra.budget');
         return {
             maxDailyCost: config.get<number>('maxCostPerDay', 5.0),
-            maxDailyTokens: config.get<number>('maxTokensPerSession', 100000),
+            // Previously read `maxTokensPerSession`, so "Reset Session Budget" could never free any daily headroom.
+            maxDailyTokens: config.get<number>('maxTokensPerDay', 500000),
             maxSessionTokens: config.get<number>('maxTokensPerSession', 100000),
             maxTaskTokens: config.get<number>('maxTokensPerTask', 32000),
             handoffThreshold: config.get<number>('handoffThreshold', 0.2),
@@ -87,7 +88,10 @@ export class BudgetManager implements vscode.Disposable {
         const dailySummary = this.usageTracker.getDailySummary();
         const sessionSummary = this.usageTracker.getSessionSummary();
         const reserved = this.reservedTotals();
-        const costUtilization = (dailySummary.totalCost + reserved.cost + estimatedCost) / this.config.maxDailyCost;
+        // A zero-cost request (local/subscription provider) must not be blocked by an already-spent dollar cap.
+        const costUtilization = estimatedCost > 0
+            ? (dailySummary.totalCost + reserved.cost + estimatedCost) / this.config.maxDailyCost
+            : 0;
         const dailyTokenUtilization = (dailySummary.totalTokens + reserved.tokens + estimatedTotalTokens) / this.config.maxDailyTokens;
         const sessionTokenUtilization = (sessionSummary.totalTokens + reserved.tokens + estimatedTotalTokens) / this.config.maxSessionTokens;
         
@@ -143,7 +147,7 @@ export class BudgetManager implements vscode.Disposable {
         const session = this.usageTracker.getSessionSummary();
         const reserved = this.reservedTotals();
         const allowed = check.allowed
-            && daily.totalCost + reserved.cost + estimatedCost <= this.config.maxDailyCost
+            && (estimatedCost === 0 || daily.totalCost + reserved.cost + estimatedCost <= this.config.maxDailyCost)
             && daily.totalTokens + reserved.tokens + estimatedTokens <= this.config.maxDailyTokens
             && session.totalTokens + reserved.tokens + estimatedTokens <= this.config.maxSessionTokens;
         if (!allowed) return { allowed: false, reason: check.reason || 'Insufficient unreserved budget' };

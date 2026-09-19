@@ -22,6 +22,8 @@ import { ModelPermissionManager } from './security/model-permissions';
 import { BillingPolicy } from './security/billing-policy';
 import { CliAgentProvider } from './providers/cli-agent-provider';
 
+const flushOnDeactivate: Array<() => Promise<void>> = [];
+
 export function activate(context: vscode.ExtensionContext): void {
     const outputChannel = vscode.window.createOutputChannel('AI Orchestra');
     context.subscriptions.push(outputChannel);
@@ -47,7 +49,13 @@ export function activate(context: vscode.ExtensionContext): void {
     const credentialBroker = new CredentialBroker(registry, modelPermissions, billingPolicy);
     const orchestrator = new Orchestrator(budgetManager, taskAnalyzer, modelRouter, credentialBroker);
     context.subscriptions.push(orchestrator);
-    const taskStore = new TaskStore(context.globalState);
+    // Workspace-scoped: tasks carry write/execute-capable work for *this* folder; a shared global store let
+    // another window/workspace "recover" (re-run) them against the wrong workspace root.
+    const taskStore = new TaskStore(context.workspaceState);
+    void taskStore.failInterrupted().then(count => {
+        if (count) outputChannel.appendLine(`Marked ${count} task(s) from a previous session as interrupted.`);
+    });
+    flushOnDeactivate.push(() => usageTracker.flush(), () => taskStore.flush());
     const toolRuntime = new ToolRuntime();
     const supervisor = new MultiAgentSupervisor(orchestrator, taskStore, budgetManager, toolRuntime);
     context.subscriptions.push(supervisor);
@@ -74,9 +82,16 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     // Chat panel wired to orchestrator
+    let goalRunning = false;
     const chatPanelProvider = new ChatPanelProvider(context.extensionUri, async (message) => {
         if (message.type === 'sendMessage') {
-            outputChannel.appendLine(`User: ${String(message.text).substring(0, 100)}`);
+            // Never log prompt text: users paste secrets, and the output channel is easy to share.
+            outputChannel.appendLine(`User message received (${String(message.text).length} chars).`);
+            if (goalRunning) {
+                chatPanelProvider.postMessage('error', { message: 'A goal is already running. Wait for it to finish before sending another.' });
+                return;
+            }
+            goalRunning = true;
             try {
                 const result = await supervisor.executeGoal(String(message.text));
 
@@ -105,6 +120,8 @@ export function activate(context: vscode.ExtensionContext): void {
                 const errMsg = error instanceof Error ? error.message : String(error);
                 chatPanelProvider.postMessage('error', { message: errMsg });
                 outputChannel.appendLine(`Error: ${errMsg}`);
+            } finally {
+                goalRunning = false;
             }
         } else if (message.type === 'switchModel') {
             statusBarManager.updateModel(String(message.model));
@@ -113,7 +130,10 @@ export function activate(context: vscode.ExtensionContext): void {
     });
 
     context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(ChatPanelProvider.viewType, chatPanelProvider)
+        // Goals run for minutes; without this the answer is dropped if the user switches sidebar views meanwhile.
+        vscode.window.registerWebviewViewProvider(ChatPanelProvider.viewType, chatPanelProvider, {
+            webviewOptions: { retainContextWhenHidden: true },
+        })
     );
 
     // 5. Register commands
@@ -213,4 +233,6 @@ async function loadProviderKeys(
     }
 }
 
-export function deactivate(): void {}
+export async function deactivate(): Promise<void> {
+    await Promise.allSettled(flushOnDeactivate.map(flush => flush()));
+}

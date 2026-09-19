@@ -51,6 +51,7 @@ export class MultiAgentSupervisor implements vscode.Disposable {
     await Promise.all(tasks.map(t => this.store.putTask(t)));
     this.events.fire({ goalId, state: 'started', detail: objective });
 
+    try {
     const concurrency = vscode.workspace.getConfiguration('ai-orchestra.agents').get('maxConcurrent', 3);
     const firstPass = await this.runLimited(tasks, concurrency, task => this.runTask(task, objective, signal));
     const reviewTask = this.newTask(
@@ -73,6 +74,13 @@ export class MultiAgentSupervisor implements vscode.Disposable {
     await this.store.putGoal({ ...goal, status: 'completed', updatedAt: Date.now() });
     this.events.fire({ goalId, state: 'completed' });
     return finalResult;
+    } catch (error) {
+      // Without this the goal stayed 'active' forever after any worker failure or cancellation.
+      const detail = error instanceof Error ? error.message : String(error);
+      await this.store.putGoal({ ...goal, status: 'failed', updatedAt: Date.now() });
+      this.events.fire({ goalId, state: 'failed', detail });
+      throw error;
+    }
   }
 
   public async recoverExpiredLeases(signal?: AbortSignal): Promise<void> {
@@ -135,6 +143,11 @@ export class MultiAgentSupervisor implements vscode.Disposable {
       await this.store.updateStatus(task.id, 'completed', { result: result.response.content, usedTokens: used });
       return result;
     } catch (error) {
+      if (signal?.aborted) {
+        // User cancelled: handing the task to a backup agent would only fail again against the aborted signal.
+        await this.store.updateStatus(task.id, 'failed', { error: 'Cancelled by user.' });
+        throw error;
+      }
       const checkpoint: AgentCheckpoint = task.checkpoint || {
         summary: `Primary agent failed before completion: ${error instanceof Error ? error.message : String(error)}`,
         completed: [], remaining: [task.description], decisions: [], blockers: [], artifacts: task.artifacts, updatedAt: Date.now(),

@@ -151,6 +151,7 @@ export class Orchestrator implements vscode.Disposable {
     options?: { signal?: AbortSignal; preferredProvider?: string; maxTokens?: number; agentId?: string }
   ): AsyncGenerator<{ chunk?: ChatChunk; metadata?: OrchestratorResult }> {
     let reservationId: string | undefined;
+    let settled = false;
     try {
       const taskAnalysis = this.taskAnalyzer.analyze(messages);
       const routingDecision = await this.modelRouter.route(taskAnalysis, options?.preferredProvider);
@@ -199,6 +200,7 @@ export class Orchestrator implements vscode.Disposable {
         outputTokens: estimatedOutputTokens,
         totalTokens: estimatedInputTokens + estimatedOutputTokens,
       }, routingDecision.provider);
+      settled = true;
 
       const budgetStatus = this.budgetManager.getBudgetStatus();
 
@@ -229,6 +231,10 @@ export class Orchestrator implements vscode.Disposable {
       const err = error instanceof Error ? error : new Error(String(error));
       this._onError.fire(err);
       throw err;
+    } finally {
+      // A consumer that stops iterating early never reaches the catch block; without this the
+      // reservation would count against the budget forever.
+      if (!settled) this.budgetManager.releaseReservation(reservationId);
     }
   }
 

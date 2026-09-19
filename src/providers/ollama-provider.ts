@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
 import { AIProvider, ProviderConfig, ChatOptions, Message, ChatResponse, ChatChunk, ModelInfo, RateLimitStatus, TokenUsage, ProviderEvents } from './types';
+import { splitNdjson } from './ndjson';
 
 export class OllamaProvider implements AIProvider {
   public readonly id = 'ollama';
@@ -42,7 +43,8 @@ export class OllamaProvider implements AIProvider {
 
   public async isAvailable(): Promise<boolean> {
     try {
-      const response = await axios.get(`${this.endpoint}/api/tags`);
+      // Called on every routing decision: an unresponsive host must not hang the whole request.
+      const response = await axios.get(`${this.endpoint}/api/tags`, { timeout: 3_000 });
       return response.status === 200;
     } catch {
       return false;
@@ -51,7 +53,7 @@ export class OllamaProvider implements AIProvider {
 
   public async refreshModels(): Promise<void> {
     try {
-      const response = await axios.get(`${this.endpoint}/api/tags`);
+      const response = await axios.get(`${this.endpoint}/api/tags`, { timeout: 3_000 });
       if (response.data && Array.isArray(response.data.models)) {
         this.models = response.data.models.map((m: any) => ({
           id: m.name,
@@ -95,7 +97,8 @@ export class OllamaProvider implements AIProvider {
             num_predict: options?.maxTokens
         }
       }, {
-        signal: options?.signal as any
+        signal: options?.signal as any,
+        timeout: 300_000
       });
 
       const tokenUsage: TokenUsage = {
@@ -148,20 +151,25 @@ export class OllamaProvider implements AIProvider {
       });
 
       const stream = response.data;
-      
+      let pending = '';
+
       for await (const chunk of stream) {
-          const lines = chunk.toString().split('\n');
+          const { lines, rest } = splitNdjson(pending, chunk.toString());
+          pending = rest;
           for (const line of lines) {
-              if (line.trim()) {
-                  const data = JSON.parse(line);
-                  if (data.message?.content) {
-                      yield { content: data.message.content, done: false };
-                  }
-                  if (data.done) {
-                      yield { content: '', done: true };
-                  }
+              const data = JSON.parse(line);
+              if (data.message?.content) {
+                  yield { content: data.message.content, done: false };
+              }
+              if (data.done) {
+                  yield { content: '', done: true };
               }
           }
+      }
+      if (pending.trim()) {
+          const data = JSON.parse(pending);
+          if (data.message?.content) yield { content: data.message.content, done: false };
+          if (data.done) yield { content: '', done: true };
       }
     } catch (error: any) {
       this._onError.fire(error);

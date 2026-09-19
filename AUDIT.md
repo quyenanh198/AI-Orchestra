@@ -52,3 +52,51 @@
 Before publishing, run `npm run lint`, `npm test`, `npm run compile`, `npm audit --omit=dev`, and `npm run package`.
 Use dedicated provider project/workspace keys with provider-side spend limits. Never use an organization admin key.
 Keep workspace writes and terminal execution disabled until a user explicitly enables them for a trusted workspace.
+
+## Full-code audit (2026-09-18, v0.3.7 baseline)
+
+Scope: every file under `src/` (~4,000 lines), the manifest, and the Grok CLI integration. Baseline was clean (`tsc`, 10 tests, 0 npm advisories, 19 `no-explicit-any` warnings), but the 10 tests only grep source text, so they could not have caught any of the runtime issues below. Findings marked **verified** were reproduced with a command, not just read.
+
+### Fixed in this pass (covered by `src/test/audit-fixes.test.ts`)
+
+**Security**
+- Workspace `.vscode/settings.json` could flip `tools.allowTerminal`, `tools.allowWorkspaceWrite`, `billing.mode` and `ollama.endpoint` (default `window` scope). A cloned repo could therefore enable agent execution/writes or point prompts at another host, and `billing.mode` set via the command was silently overridden. These four settings are now `scope: machine`, and `capabilities.untrustedWorkspaces.supported = false` is declared explicitly.
+- The `execute` tool's allowlist was not a sandbox: `node -e`, `git -c core.sshCommand=...`, `npm exec` and `npx <pkg>` all run arbitrary code. `npx` is removed; `node` may only run a script, `git`/`npm` only a fixed subcommand set, and option injection (`--output`, `--script-shell`, `--prefix`, ...) is rejected (`src/tools/tool-policy.ts`).
+- `read_file`/`write_file` had a lexical workspace check only. They now resolve symlinks/junctions, refuse secrets (`.env*`, `.git/config`, keys, `.npmrc`, `.ssh`) for reads, refuse `.git/`, `.vscode/`, `.env*` for writes (an agent could otherwise rewrite the settings that gate it), and cap writes at 1 MiB.
+- **Verified:** `execFile` errors embed the full argv, and for chat calls argv contains the whole prompt (including file contents returned by tools). That text was shown in the chat UI, chained into `All providers failed: ...` and written to the output channel. Errors are now reduced to name, exit code and the last stderr lines. The output channel also no longer logs prompt text.
+- An unrecognised agent id fell back to the `supervisor` role, so in Restricted mode it inherited the supervisor's model grants; it is now denied.
+- `innerHTML` with model ids (which can come from a local Ollama server) in the chat webview replaced by `textContent`; CSP nonce now uses `crypto.randomBytes`.
+
+**Provider/auth correctness**
+- **Verified:** `/logged in|chatgpt|api key/i` matches "Not logged in", and treated a Codex *API-key* login (billed per token) as a subscription session, bypassing Subscription-only. Replaced by `classifyCodex`.
+- **Grok** (asked about explicitly): `checkStatus` returned `authenticated: true` after any exit-0 `grok models`, so a signed-out CLI showed as available. Antigravity was fail-open the same way (`!/authentication required/`). Both now require non-empty output that does not look like a login prompt (`classifySessionProbe`). The package `@xai-official/grok` was checked on npm (maintainer `xai-security@x.ai`). The Grok CLI is not installed on the audit machine, so its real `models` output when signed out is **unverified**; if it exits 0 with a normal-looking error, add its exact text to `AUTH_HINT` in `src/providers/cli-status.ts`.
+- Sidebar showed a green check for "Not authenticated..." (regex matched "authenticated"). Fixed in `src/ui/status-icon.ts`.
+- Gemini API-key path sent `system` messages as a user turn, giving two consecutive user turns, which the API rejects, so every supervisor/worker call (system + user) failed on that path. System text now goes to `systemInstruction`; turns are merged/alternated.
+- Ollama: streaming parsed each network chunk as whole JSON lines (breaks when an object spans chunks); no timeout on `isAvailable()` although it runs on every routing decision. Both fixed.
+
+**Budget / orchestration**
+- `maxDailyTokens` was read from `maxTokensPerSession`, so "Reset Session Budget" could never free anything. New `ai-orchestra.budget.maxTokensPerDay` (default 500,000, a product decision, change if you disagree); `criticalThreshold` is now declared in the manifest.
+- Once the daily dollar cap was spent, zero-cost providers (Ollama, subscription CLIs) were blocked too. Zero-cost requests are now exempt from the cost cap only.
+- `TaskStore`/`UsageTracker` write chains were poisoned by one failed Memento write (every later write rejected/skipped). Fixed.
+- `Orchestrator.executeStream` leaked its budget reservation if the consumer stopped early.
+- Goals stayed `active` forever after a worker failure; cancellation triggered pointless backup handoffs. Goals now become `failed`, cancelled tasks fail without handoff.
+- `TaskStore` lived in `globalState` and `recoverExpiredLeases` re-ran leased tasks (write/execute-capable), including tasks from another window/workspace whose in-memory copy never sees the owner's heartbeats, against the *current* workspace root. The store is now workspace-scoped and tasks left running by a previous session are marked `failed` on activation instead of silently resumed.
+- Chat: a second message while a goal is running is rejected; the webview keeps its context when hidden (results were dropped when the user switched views during a multi-minute goal); `deactivate` now flushes pending writes.
+
+### Behaviour changes to be aware of
+- Users who set the four machine-scoped settings in a workspace must move them to User settings.
+- Existing tasks in `globalState` are orphaned by the move to workspace storage.
+- `execute` no longer accepts `npx`, `node -e`, or arbitrary `git`/`npm` subcommands.
+- Codex logged in with an API key is now reported "not authenticated" (with an explanation) rather than available.
+
+### Open findings (not fixed; ordered by priority)
+1. **Windows `.cmd` shims cannot be spawned (verified on Node 22.23 and 24.19: `spawn EINVAL`).** `resolveCommand` prefers `.cmd`/`.bat` and falls back to `npx.cmd`/`npm.cmd`; since the CVE-2024-27980 fix Node refuses those without a shell. npm-installed `codex`/`claude`/`grok` on Windows are `.cmd` only. Not changed blind because a shell fallback with the prompt in argv is command injection: the safe design is prompt over stdin plus `cmd.exe /d /s /c` with validated static args, or resolving the shim to its script. Needs a test on real Windows VS Code before choosing.
+2. Every chat message runs a full goal (3 parallel workers + reviewer + supervisor = 5+ model calls) with no history and no cancel. The model dropdown/"Switch Model" only change display text, and the header defaults to "GPT-4o" even in Subscription mode (already on the roadmap above).
+3. No per-call user confirmation for agent writes/execution, and tool output is fed back to the model unfenced (prompt-injection path). Settings-only opt-in remains the sole gate.
+4. `ModelRouter` calls `isAvailable()` on every route and every fallback; for CLI providers that spawns 1-3 processes (Grok makes a network call). Cache status for a short TTL.
+5. `TaskStore` rewrites the entire task history on every heartbeat and never prunes; `UsageTracker` stores `daily` and `monthly` copies and, in `globalState`, is last-write-wins across windows.
+6. Google OAuth loopback: first request to the port wins (any local request can consume the one-shot listener), the server is not closed if `openExternal` throws, and a state mismatch answers "login complete" with HTTP 400.
+7. Antigravity "Logout" only launches `agy`; "Login" reinstalls the CLI on every click; the `npx --yes <pkg>` fallback downloads an unpinned package during a chat request.
+8. On Windows the `execute` tool cannot run `npm` (needs `.cmd`, same cause as #1).
+9. Both sidebar views register the same provider, so each shows the whole tree; `TaskAnalyzer` uses substring keyword matching ("hi" matches "this") on tool-result-heavy context, which biases most agent calls to higher tiers.
+10. Hygiene: 19 `no-explicit-any` warnings; dead code (`TaskPlanner`, `Settings.getConfig`/`getProviderConfig`, `BudgetManager.getRecommendedModel`, `executeStream`); `getCheaperAlternative` can suggest an OpenAI model in Subscription mode; Anthropic display names are wrong ("Claude 3.5 Sonnet" for `claude-sonnet-4-...`); the original architecture tests are source-regex checks and should be replaced by behavioural ones like the new file.
