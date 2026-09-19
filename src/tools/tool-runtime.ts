@@ -1,11 +1,9 @@
 import * as vscode from 'vscode';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { relative } from 'node:path';
+import { locateProgram, resolveLaunch, runProcess } from '../providers/cli-exec';
 import { AgentCapability, AgentDefinition } from '../agents/types';
 import { assertCommandArgs, assertPathAllowed, assertRealPathInside } from './tool-policy';
 
-const execFileAsync = promisify(execFile);
 // `npx` is deliberately absent: it downloads and runs arbitrary packages.
 const ALLOWED_COMMANDS = new Set(['git', 'npm', 'node']);
 const MAX_WRITE_BYTES = 1024 * 1024;
@@ -45,7 +43,10 @@ export class ToolRuntime {
     assertCommandArgs(command, args);
     const folder = vscode.workspace.workspaceFolders?.find(item => cwd === item.uri.fsPath || cwd.startsWith(`${item.uri.fsPath}${process.platform === 'win32' ? '\\' : '/'}`));
     if (!folder) throw new Error('Terminal working directory must be inside an active workspace.');
-    const { stdout, stderr } = await execFileAsync(command, args, { cwd, timeout: 120_000, windowsHide: true });
+    // On Windows `npm` is an npm.cmd shim, which Node cannot spawn directly; resolve it to its real target (no shell).
+    const program = process.platform === 'win32' ? (await locateProgram(command, true)) ?? command : command;
+    const launch = await resolveLaunch(program);
+    const { stdout, stderr } = await runProcess(launch, args, { cwd, timeout: 120_000 });
     return `${stdout}${stderr}`;
   }
 

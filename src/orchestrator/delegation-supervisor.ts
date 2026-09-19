@@ -164,7 +164,9 @@ export class DelegationSupervisor {
   private async execute(providerId: string, prompt: string, maxToolTurns: number, maxTaskTokens: number, signal?: AbortSignal): Promise<OrchestratorResult> {
     const provider = this.deps.providers().find(item => item.id === providerId);
     const maxContext = Math.max(...(provider?.models.map(model => model.maxContextTokens) ?? [8000]));
-    const window = Math.min(this.deps.settings().contextTokens, Math.floor(maxContext * 0.5));
+    // A command-line-only agent cannot take an arbitrarily long prompt: keep a rough 4 chars/token, minus room for the system text.
+    const commandLineCap = provider?.maxPromptChars ? Math.max(500, Math.floor(provider.maxPromptChars / 4) - 800) : Number.POSITIVE_INFINITY;
+    const window = Math.min(this.deps.settings().contextTokens, Math.floor(maxContext * 0.5), commandLineCap);
     const messages: Message[] = [{ role: 'system', content: EXECUTOR_PROMPT }, ...this.deps.context.pack(prompt, window)];
     let used = 0;
     let latest: OrchestratorResult | undefined;

@@ -31,8 +31,25 @@ export function isRateLimitMessage(text: string): boolean {
   return /rate.?limit|too many requests|\b429\b|usage limit|quota|limit (reached|exceeded)|try again (later|in)|overloaded/i.test(text);
 }
 
-/** Reads "retry after 30 seconds" / "try again in 2 hours" style hints; falls back to a conservative default. */
-export function parseRetryDelayMs(text: string): number {
+/**
+ * Reads "retry after 30 seconds" / "try again in 2 hours" / "try again at 6:39 PM" hints (the last is what Codex prints
+ * when a subscription limit is hit); falls back to a conservative default.
+ */
+export function parseRetryDelayMs(text: string, now: number = Date.now()): number {
+  const clock = /(?:try again|retry|resets?)\s+at\s+(\d{1,2}):(\d{2})\s*(am|pm)?/i.exec(text);
+  if (clock) {
+    let hours = Number(clock[1]);
+    const period = clock[3]?.toLowerCase();
+    if (period === 'pm' && hours < 12) hours += 12;
+    if (period === 'am' && hours === 12) hours = 0;
+    if (hours < 24 && Number(clock[2]) < 60) {
+      const target = new Date(now);
+      target.setHours(hours, Number(clock[2]), 0, 0);
+      let delta = target.getTime() - now;
+      if (delta <= 0) delta += 24 * HOUR; // that time has already passed today, so it means tomorrow
+      return Math.min(MAX_COOLDOWN_MS, Math.max(1000, delta));
+    }
+  }
   const match = /(?:retry|try again|resets?)[^0-9]{0,24}(\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b/i.exec(text);
   if (!match) return DEFAULT_COOLDOWN_MS;
   const value = Number(match[1]);
@@ -61,7 +78,7 @@ export class LimitTracker {
   }
 
   public async recordRateLimit(providerId: string, message: string): Promise<number> {
-    const until = this.now() + parseRetryDelayMs(message);
+    const until = this.now() + parseRetryDelayMs(message, this.now());
     this.data.cooldowns[providerId] = until;
     await this.persist();
     return until;

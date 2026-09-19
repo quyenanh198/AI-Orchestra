@@ -1,13 +1,10 @@
 import * as vscode from 'vscode';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { AIProvider, ChatChunk, ChatOptions, ChatResponse, Message, ModelInfo, ProviderConfig, RateLimitStatus } from './types';
-import { classifyCodex, classifySessionProbe, describeCliFailure, parseCliJson } from './cli-status';
-
-const execFileAsync = promisify(execFile);
+import { classifyCodex, classifySessionProbe, describeCliFailure, extractCliError, parseCliJson } from './cli-status';
+import { RunOptions, locateProgram, resolveLaunch, runProcess } from './cli-exec';
 
 type CliKind = 'codex' | 'claude' | 'antigravity' | 'grok';
 interface CliCommand { executable: string; prefix: string[]; }
@@ -24,8 +21,11 @@ export class CliAgentProvider implements AIProvider {
   public readonly id: string;
   public readonly name: string;
   public readonly models: ModelInfo[];
+  /** Grok and Antigravity take the prompt as an argument (Windows caps a command line near 32,000 chars); Claude/Codex use stdin. */
+  public readonly maxPromptChars?: number;
 
   constructor(private readonly kind: CliKind) {
+    if (kind === 'grok' || kind === 'antigravity') this.maxPromptChars = process.platform === 'win32' ? 28_000 : 100_000;
     this.id = kind === 'codex' ? 'codex-cli' : kind === 'claude' ? 'claude-code' : kind === 'antigravity' ? 'antigravity-cli' : 'grok-cli';
     this.name = kind === 'codex' ? 'OpenAI Codex (ChatGPT login)' : kind === 'claude' ? 'Claude Code (Claude login)' : kind === 'antigravity' ? 'Google Antigravity (Google login)' : 'Grok Build (xAI account login)';
     this.models = kind === 'codex'
@@ -58,23 +58,23 @@ export class CliAgentProvider implements AIProvider {
   private async probeStatus(): Promise<CliStatus> {
     try {
       const command = await this.resolveCommand(false);
-      const versionResult = await execFileAsync(command.executable, [...command.prefix, ...(this.kind === 'grok' ? ['version'] : ['--version'])], { timeout: 10_000, windowsHide: true });
+      const versionResult = await this.run(command, this.kind === 'grok' ? ['version'] : ['--version'], { timeout: 10_000 });
       const version = `${versionResult.stdout}\n${versionResult.stderr}`.trim().split(/\r?\n/)[0];
       try {
         if (this.kind === 'codex') {
-          const { stdout, stderr } = await execFileAsync(command.executable, [...command.prefix, 'login', 'status'], { timeout: 10_000, windowsHide: true });
+          const { stdout, stderr } = await this.run(command, ['login', 'status'], { timeout: 10_000 });
           const verdict = classifyCodex(`${stdout}\n${stderr}`);
           return { installed: true, version, executable: command.executable, ...verdict };
         }
         if (this.kind === 'antigravity') {
-          const { stdout } = await execFileAsync(command.executable, ['-p', '/usage', '--output-format', 'json', '--print-timeout', '10s'], { timeout: 15_000, windowsHide: true });
+          const { stdout } = await this.run(command, ['-p', '/usage', '--output-format', 'json', '--print-timeout', '10s'], { timeout: 15_000 });
           return { installed: true, version, executable: command.executable, ...classifySessionProbe(stdout, 'Google', this.name) };
         }
         if (this.kind === 'grok') {
-          const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'models'], { timeout: 15_000, windowsHide: true });
+          const { stdout } = await this.run(command, ['models'], { timeout: 15_000 });
           return { installed: true, version, executable: command.executable, ...classifySessionProbe(stdout, 'xAI account', this.name) };
         }
-        const { stdout } = await execFileAsync(command.executable, [...command.prefix, 'auth', 'status', '--json'], { timeout: 10_000, windowsHide: true });
+        const { stdout } = await this.run(command, ['auth', 'status', '--json'], { timeout: 10_000 });
         const auth = JSON.parse(stdout) as { loggedIn?: boolean; authMethod?: string; subscriptionType?: string };
         return { installed: true, authenticated: auth.loggedIn === true, version, accountType: auth.subscriptionType || auth.authMethod, executable: command.executable };
       } catch (error) {
@@ -136,10 +136,11 @@ export class CliAgentProvider implements AIProvider {
   public dispose(): void {}
 
   private async runCodex(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
+    // "-" makes `codex exec` read the prompt from stdin: no command-line length limit, nothing for a shell to interpret.
     const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only'];
     if (options.model && options.model !== 'codex-default') args.push('--model', options.model);
-    args.push(prompt);
-    const stdout = await this.exec(args, cwd, options.signal);
+    args.push('-');
+    const stdout = await this.exec(args, cwd, options.signal, prompt);
     let content = '';
     let inputTokens = 0; let outputTokens = 0;
     for (const line of stdout.split(/\r?\n/)) {
@@ -149,15 +150,20 @@ export class CliAgentProvider implements AIProvider {
         if (event.usage) { inputTokens = event.usage.input_tokens || inputTokens; outputTokens = event.usage.output_tokens || outputTokens; }
       } catch { /* JSONL may include non-event diagnostics. */ }
     }
-    if (!content) throw new Error('Codex CLI returned no final agent message.');
+    // Codex reports a usage limit as an `error` event on stdout, not as a message; surface its text so the supervisor can pause this agent.
+    if (!content) throw new Error(extractCliError(stdout) || 'Codex CLI returned no final agent message.');
     return { content, model: options.model || 'codex-default', provider: this.id, finishReason: 'stop', usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, estimatedCost: 0 } };
   }
 
   private async runClaude(prompt: string, cwd: string, options: ChatOptions): Promise<ChatResponse> {
-    const args = ['-p', prompt, '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1'];
+    // `-p` without a value is print mode and reads the prompt from stdin. The extension runs its own tools, so Claude's
+    // built-in ones are switched off (`--tools ""`): with them on, a single-turn run ends in error_max_turns as soon as
+    // the model reaches for a tool instead of answering.
+    const args = ['-p', '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1', '--tools', ''];
     if (options.model) args.push('--model', options.model);
-    const stdout = await this.exec(args, cwd, options.signal);
-    const data = parseCliJson<{ result?: string; usage?: { input_tokens?: number; output_tokens?: number }; subtype?: string }>(this.name, stdout);
+    const stdout = await this.exec(args, cwd, options.signal, prompt);
+    const data = parseCliJson<{ result?: string; is_error?: boolean; usage?: { input_tokens?: number; output_tokens?: number }; subtype?: string; errors?: string[] }>(this.name, stdout);
+    if (data.is_error) throw new Error((data.result || data.errors?.join('; ') || `Claude Code failed (${data.subtype || 'unknown'}).`).replace(/\s+/g, ' ').slice(0, 500));
     if (!data.result) throw new Error(`Claude Code returned no result (${data.subtype || 'unknown'}).`);
     const inputTokens = data.usage?.input_tokens || 0; const outputTokens = data.usage?.output_tokens || 0;
     return { content: data.result, model: options.model || 'sonnet', provider: this.id, finishReason: 'stop', usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, estimatedCost: 0 } };
@@ -184,31 +190,31 @@ export class CliAgentProvider implements AIProvider {
   }
 
   /** Runs the resolved CLI and rethrows failures without the argv (which would contain the whole prompt). */
-  private async exec(args: string[], cwd: string, signal?: AbortSignal): Promise<string> {
+  private async exec(args: string[], cwd: string, signal?: AbortSignal, input?: string): Promise<string> {
     const command = await this.resolveCommand(true);
     try {
-      const { stdout } = await execFileAsync(command.executable, [...command.prefix, ...args], { cwd, timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal });
+      const { stdout } = await this.run(command, args, { cwd, timeout: 300_000, signal, input });
       return stdout;
     } catch (error) {
       throw new Error(describeCliFailure(this.name, error));
     }
   }
 
+  /** Every CLI launch goes through here so Windows `.cmd` shims are resolved to their real target instead of spawned (EINVAL). */
+  private async run(command: CliCommand, args: string[], options: RunOptions): Promise<{ stdout: string; stderr: string }> {
+    const launch = await resolveLaunch(command.executable);
+    return runProcess({ ...launch, prefix: [...launch.prefix, ...command.prefix] }, args, options);
+  }
+
   private async resolveCommand(allowNpx: boolean): Promise<CliCommand> {
-    const locator = process.platform === 'win32' ? 'where.exe' : 'which';
-    try {
-      const binary = this.kind === 'antigravity' ? 'agy' : this.kind;
-      const { stdout } = await execFileAsync(locator, [binary], { timeout: 5_000, windowsHide: true });
-      const candidates = stdout.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
-      const executable = process.platform === 'win32'
-        ? candidates.find(value => /\.(?:exe|cmd|bat)$/i.test(value))
-        : candidates[0];
-      if (executable) return { executable: executable.trim(), prefix: [] };
-    } catch { /* Fall back to the official npm package on user-initiated execution. */ }
+    // Always an absolute path: a bare `npx.cmd` would be resolved by Windows against the workspace directory first.
+    const found = await locateProgram(this.kind === 'antigravity' ? 'agy' : this.kind, true);
+    if (found) return { executable: found, prefix: [] };
     const explicit = await this.explicitInstallPath();
     if (explicit) return { executable: explicit, prefix: [] };
     if (!allowNpx || this.kind === 'antigravity') throw new Error(`${this.kind} CLI is not installed or not on PATH.`);
-    const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    const npx = await locateProgram('npx', true);
+    if (!npx) throw new Error(`${this.kind} CLI is not installed and npx was not found on PATH.`);
     return { executable: npx, prefix: ['--yes', this.packageName()] };
   }
 
@@ -224,11 +230,14 @@ export class CliAgentProvider implements AIProvider {
         : join(homedir(), '.local', 'bin', 'agy');
       return existsSync(candidate) ? candidate : undefined;
     }
+    if (process.platform === 'win32') {
+      // npm's default global prefix; avoids spawning `npm.cmd` just to ask for it.
+      const candidate = join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'npm', `${this.kind}.cmd`);
+      return existsSync(candidate) ? candidate : undefined;
+    }
     try {
-      const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-      const { stdout } = await execFileAsync(npm, ['prefix', '-g'], { timeout: 5_000, windowsHide: true });
-      const prefix = stdout.trim();
-      const candidate = process.platform === 'win32' ? join(prefix, `${this.kind}.cmd`) : join(prefix, 'bin', this.kind);
+      const { stdout } = await runProcess({ executable: 'npm', prefix: [] }, ['prefix', '-g'], { timeout: 5_000 });
+      const candidate = join(stdout.trim(), 'bin', this.kind);
       return existsSync(candidate) ? candidate : undefined;
     } catch { return undefined; }
   }

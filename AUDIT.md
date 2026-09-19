@@ -113,14 +113,35 @@ supervisor that assigns each prompt to **one** subscription/free agent (see READ
 - The executor runs under the `coder` role, so Restricted-mode model permissions for that role decide which agents it
   may use. Selection is deterministic rules, not an LLM; an LLM-assisted choice for ambiguous prompts would spend quota.
 
+### Windows launch fix
+
+- Cause (verified on Node 22.23 and 24.19): npm installs `codex`/`claude`/`npx`/`npm` as `.cmd` shims and, since the
+  CVE-2024-27980 fix, Node refuses to spawn a `.cmd`/`.bat` without a shell (`spawn EINVAL`). A `shell: true` fallback is
+  not acceptable because the prompt is arbitrary text and cmd.exe interprets `& | ^ %`.
+- Fix (`src/providers/cli-exec.ts`): `resolveLaunch` reads the shim and launches its real target directly with no shell:
+  a native `.exe` (Claude Code) or `node script.js` (Codex, npm; `node.exe` next to the shim, then PATH, then VS Code's own
+  runtime with `ELECTRON_RUN_AS_NODE`). A shim it cannot understand is refused with a message, never guessed.
+  `locateProgram` returns absolute paths, so no bare `npx.cmd` is resolved against the working directory.
+- Prompts travel over stdin for Claude (`-p`) and Codex (`exec ... -`), which removes the ~32,000-character Windows
+  command-line limit. Grok and Antigravity still take the prompt as an argument, so `provider.maxPromptChars` caps the
+  shared context window sent to them (`DelegationSupervisor` honours it).
+- Failure text now includes what the CLI printed on stdout (Codex `error`/`turn.failed` events, Claude `is_error` with
+  `result` or `errors[]`) and never the argv. This exposed two more bugs, both fixed: Codex's usage-limit message
+  ("try again at 6:39 PM") was not recognised as a cooldown, so `LimitTracker` now parses clock times (past time means
+  tomorrow); and Claude chat ended in `error_max_turns` because its built-in tools were on with `--max-turns 1`, so it now
+  runs with `--tools ""` (the extension executes tools itself).
+- Verified on this machine against the real CLIs: `claude`/`codex`/`npx`/`npm --version` launch, status reads "Available",
+  a Claude chat returns an answer, and a Codex usage limit is reported and paused. Grok and Antigravity CLIs are not
+  installed here, so their launch path is covered by the shim tests only.
+
 ### Open findings (not fixed; ordered by priority)
-1. **Windows `.cmd` shims cannot be spawned (verified on Node 22.23 and 24.19: `spawn EINVAL`).** `resolveCommand` prefers `.cmd`/`.bat` and falls back to `npx.cmd`/`npm.cmd`; since the CVE-2024-27980 fix Node refuses those without a shell. npm-installed `codex`/`claude`/`grok` on Windows are `.cmd` only. Not changed blind because a shell fallback with the prompt in argv is command injection: the safe design is prompt over stdin plus `cmd.exe /d /s /c` with validated static args, or resolving the shim to its script. Needs a test on real Windows VS Code before choosing.
+1. ~~Windows `.cmd` shims cannot be spawned (`spawn EINVAL`).~~ Resolved, see "Windows launch fix" below.
 2. ~~Every chat message runs a full multi-agent goal, with no history, no cancel and a decorative model selector.~~ Resolved by the delegation redesign above.
 3. No per-call user confirmation for agent writes/execution, and tool output is fed back to the model unfenced (prompt-injection path). Settings-only opt-in remains the sole gate.
 4. ~~`isAvailable()` spawned 1-3 processes per provider per routing decision.~~ CLI providers now reuse a 30 s status probe.
 5. `UsageTracker` stores `daily` and `monthly` copies and, in `globalState`, is last-write-wins across windows; the same applies to `LimitTracker` (global state, so counts from two open windows can overwrite each other). `TaskStore` is now pruned to 50 delegations.
 6. Google OAuth loopback: first request to the port wins (any local request can consume the one-shot listener), the server is not closed if `openExternal` throws, and a state mismatch answers "login complete" with HTTP 400.
 7. Antigravity "Logout" only launches `agy`; "Login" reinstalls the CLI on every click; the `npx --yes <pkg>` fallback downloads an unpinned package during a chat request.
-8. On Windows the `execute` tool cannot run `npm` (needs `.cmd`, same cause as #1).
+8. ~~On Windows the `execute` tool cannot run `npm` (needs `.cmd`).~~ Resolved with #1: `execute` resolves `npm` through the same shim launcher.
 9. Both sidebar views register the same provider, so each shows the whole tree; `TaskAnalyzer` uses substring keyword matching ("hi" matches "this") on tool-result-heavy context, which biases most agent calls to higher tiers.
 10. Hygiene: 19 `no-explicit-any` warnings; dead code (`Settings.getConfig`/`getProviderConfig`, `BudgetManager.getRecommendedModel`, `Orchestrator.executeStream`); `getCheaperAlternative` can suggest an OpenAI model in Subscription mode; Anthropic display names are wrong ("Claude 3.5 Sonnet" for `claude-sonnet-4-...`); the original architecture tests are source-regex checks and should be replaced by behavioural ones like the new file.

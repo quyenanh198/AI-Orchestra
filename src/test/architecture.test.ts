@@ -76,14 +76,15 @@ test('account-backed CLI providers invoke official CLIs without reading their to
   assert.match(cli, /@xai-official\/grok/);
   assert.match(cli, /--output-format', 'json'.*permission-mode', 'plan'/s);
   assert.match(cli, /antigravity\.google\/cli\/install\.ps1/);
-  assert.match(cli, /npm.*prefix.*-g/s);
+  assert.match(cli, /'prefix', '-g'/);
   assert.match(cli, /LOCALAPPDATA/);
-  assert.match(cli, /exe\|cmd\|bat/);
+  assert.match(await read('src/providers/cli-exec.ts'), /exe\|cmd\|bat/);
   assert.match(cli, /checkStatus/);
   assert.match(cli, /subscriptionType/);
   assert.match(cli, /--version/);
   assert.match(cli, /sandbox', 'read-only/);
   assert.match(cli, /permission-mode', 'plan/);
+  assert.match(cli, /'--tools', ''/, 'Claude built-in tools stay off so a one-turn run cannot end in error_max_turns');
   assert.match(cli, /npm install -g/);
   assert.match(cli, /prefix: \['--yes', this\.packageName\(\)\]/);
   assert.match(registry, /CliAgentProvider\('antigravity'\)/);

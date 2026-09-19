@@ -84,6 +84,8 @@ export interface AIProvider {
   readonly id: string;
   readonly name: string;
   readonly models: ModelInfo[];
+  /** Set when the provider can only take the prompt on its command line, which the OS limits in length. */
+  readonly maxPromptChars?: number;
 
   /** Check if provider is configured and available */
   isAvailable(): Promise<boolean>;
